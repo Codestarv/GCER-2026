@@ -9,8 +9,8 @@
 #define ARM 3
 #define MOTORl 3
 #define MOTORr 0
-#define SENSORl 2
-#define SENSORr 5
+#define SENSORl 5
+#define SENSORr 2
 #define LIGHT_SENSOR_PORT 5
 #define BLACK 3000
 #define RIGHT_MOTOR_CORRECTION 1.002
@@ -21,29 +21,28 @@
 #define WHITE 2000
 #define CLAW_UPPER_OPEN 450
 #define CLAW_OPEN 600
-#define CLAW_CLOSE 1160
+#define CLAW_CLOSE 1130
 #define CLAW_DOOR 1080
 #define CLAW_BOTGUY 874	
 #define CLAW_CONE 560
 #define ARM_BOTGUY 1500
-#define ARM_CONE 1915
+#define ARM_CONE 1940
 #define DEGREES 5
 #define ARM_BOTGUY_CARRY 402
 #define ARM_UP 820
-#define ARM_START 300
+#define ARM_START 160
 #define ARM_DOWN_BOTGUY 1750
-#define ARM_DOOR 1620
+#define ARM_DOOR 1630
 #define ARM_CONE_UP 500
 #define CONE1_LINE_FOLLOW 6000
 #define CONE2_LINE_FOLLOW 2300
 #define RETURN_LINE_FOLLOW 11000
 #define RAMP_LINE_FOLLOW 15300
-#define SHUT_DOWN_SECS 118
-
+#define SHUT_DOWN_SECS 11
 
 /* Line Follow Definitions */
 
-#define TO_BOTGUY_LINE_FOLLOW 4200
+#define TO_BOTGUY_LINE_FOLLOW 4100
 
 void move_arm(int end_pos) {
     enable_servos();
@@ -404,6 +403,41 @@ void square_up_smooth(int tick_guess) {
     ao();
 }
 
+#define CORRECTION 0.3
+// Twobsensor line follower with proportional steering
+// Uses global MOTORl, MOTORr, SENSORl, SENSORr
+// distance : target encoder ticks (average of both wheels)
+// speed    : base motor speed (0b1000)
+void line_follow_2(int distance, int speed) {
+    // Reset encoders
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    msleep(50);
+
+    // Loop until the average travelled distance reaches the target
+    while ((abs(gmpc(MOTORl)) + abs(gmpc(MOTORr))) / 2.0 < distance) {
+        int left_val  = analog(SENSORl);
+        int right_val = analog(SENSORr);
+
+        // Error = left - right
+        // Positive => left sees more black (lower value) => line is to the left => turn left
+        // Negative => right sees more black => turn right
+        int error = left_val - right_val;
+
+        float speed_modifier = error * CORRECTION;
+
+        // Differential steering
+        mav(MOTORr, speed + speed_modifier);
+        mav(MOTORl, speed - speed_modifier);
+
+        msleep(5);  // small delay to keep CPU responsive
+    }
+
+    // Stop both motors
+    ao();
+    msleep(50);
+}
+
 void go_up_ramp() {
     line_follow(11000, MOTOR_SPEED_1500);
     //drive_till_white(3);
@@ -417,6 +451,7 @@ void move_to_botguy() {
     move_claw(CLAW_DOOR);
     drive_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+
     msleep(1300);
     right_degrees(46);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
@@ -436,7 +471,7 @@ void move_to_botguy() {
     drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
     msleep(500);
     left_degrees(55);
-    right_degrees(22);
+    right_degrees(23);
     ao();
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(670);
@@ -445,13 +480,12 @@ void move_to_botguy() {
 }
 
 void open_doors() {
-    move_arm(ARM_DOOR);
-    line_follow(125,MOTOR_SPEED_500);
-    right_degrees(40);
+    move_arm_fast_slow_down(ARM_DOOR);
+    line_follow(150,MOTOR_SPEED_500);
+    right_degrees_speed(35);
     move_arm(ARM_DOWN_BOTGUY);
     msleep(50);
-    left_degrees(38);
-    line_follow(15,MOTOR_SPEED_1500);
+    left_degrees(40);
     ao();
     msleep(100);
     left_degrees(20);
@@ -471,7 +505,7 @@ void open_doors() {
     enable_servos();
     msleep(300);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(100);
+    msleep(40);
     set_servo_position(CLAW,CLAW_OPEN);
     msleep(200);
     right_degrees_less(1);
@@ -482,7 +516,7 @@ void open_doors() {
     set_servo_position(CLAW,CLAW_CLOSE);
     move_arm(ARM_BOTGUY);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
-    msleep(350);
+    msleep(300);
     ao();
     left_degrees_less(1);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
@@ -536,22 +570,24 @@ void get_cones() {
     back_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(900);
-    right_degrees(90);
+    right_degrees(95);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1200);
     ao();
+    right_degrees(5);
     move_arm(ARM_CONE);
     line_follow(450, MOTOR_SPEED_1500);
-    ao();
+    /*ao();
     right_degrees(DEGREES);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(500);
     ao();
     left_degrees(DEGREES);
+    */
     printf("FINISHED CONE1 GOING TO CONE2\n");
     line_follow(3300, MOTOR_SPEED_1500);
     right_degrees(DEGREES);
-    drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(1200);
     ao();
     enable_servos();
@@ -562,7 +598,7 @@ void get_cones() {
     move_arm(ARM_UP);
     left_degrees(DEGREES);
     msleep(200);
-    line_follow(RETURN_LINE_FOLLOW,MOTOR_SPEED_1500);
+    line_follow_2(RETURN_LINE_FOLLOW,MOTOR_SPEED_1500);
     right_degrees(90);
     back_till_blk();
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
@@ -573,12 +609,12 @@ void get_cones() {
     drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
     msleep(200);
     right_degrees(90);
-    drive_till_blk_time(1);
-    line_follow(15300,MOTOR_SPEED_1500);
-    drive_till_white(1);
-    right_degrees(15);
-    drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
-    msleep(400);
+    drive_till_blk_time(0.25);
+    line_follow_2(15100,MOTOR_SPEED_1500);
+    drive_till_white(0.5);
+}
+void parking() {
+    right_degrees(5);
     ao();
     move_arm_fast_slow_down(ARM_CONE);
     enable_servos();
@@ -589,48 +625,43 @@ void get_cones() {
     set_servo_position(CLAW,CLAW_CLOSE);
     msleep(500);
     disable_servos();
-    drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
-    msleep(1300);
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+    msleep(870);
     back_till_blk();
-    drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
-    msleep(1500);
+    drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    msleep(1000);
     left_degrees(33);
     drive_till_blk_time(0.5);
-    drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
-    msleep(1900);
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+    msleep(1470);
     back_till_blk();
-    drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
-    msleep(2000);
-    left_degrees(155);
-    drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
-    msleep(4500);
+    drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    msleep(1330);
+    left_degrees(145);
+    drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    msleep(3200);
+    drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
+    msleep(300);
     right_degrees(100);
+    
+    drive(-MOTOR_SPEED_1500, -MOTOR_SPEED_1500);
+    msleep(200);
+    drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
+    msleep(300);
+    right_degrees(10);
 
 
 
 }
 
 int main() {
-    
+
     move_to_botguy();
     open_doors();
     deliver_botguy();
     get_cones();
+    
+    parking();
    
 
-  
-
-
 }
-
-
-
-
-
-
-
-
-
-
-
-
