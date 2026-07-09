@@ -11,6 +11,7 @@
 
 #define MOTOR_SPEED_500 500
 #define MOTOR_SPEED_1000 1000
+#define MOTOR_SPEED_750 750
 #define MOTOR_SPEED_1500 1500
 #define MOTOR_SPEED_350 350
 
@@ -35,16 +36,27 @@
 
 #define ARM_DOWN 250
 #define CLAW_OPEN 1900
-#define CLAW_CLOSE 10
+#define CLAW_CLOSE 0
 #define ARM_UP 1800
-#define ARM_UP_STORAGE 1300
-#define ARM_DOWN_STORAGE 930
+#define ARM_UP_STORAGE 1100
+#define ARM_DOWN_STORAGE 920
 #define BLUE_OPEN 2000
 #define BLUE_CLOSE 180
 #define PINK_CLOSE 1564
 #define PINK_OPEN 2047
  
-#define STORAGE_DISTANCE 16350
+#define STORAGE_DISTANCE 16250
+
+// --- Arm ramp speed. Speed = ARM_STEP / ARM_STEP_DELAY units-per-ms. ---
+// Bigger STEP or smaller DELAY = faster. Was 10 / 15 (~0.67 u/ms).
+// 12 / 8 is ~2.25x faster and still smooth enough to hold the drum.
+#define ARM_STEP        12
+#define ARM_STEP_DELAY  8
+
+// Faster ramp for the EMPTY arm (no drum to fling). ~3 u/ms.
+// Only use these when the claw is NOT carrying a drum.
+#define ARM_STEP_FAST        18
+#define ARM_STEP_DELAY_FAST  6
 
 void drive(int speed1, int speed2) {
     mav(MOTORl, speed1);
@@ -109,22 +121,48 @@ void move_arm(int end_pos) {
     printf("move_arm(S): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
     while (current_pos != end_pos) {
         if (current_pos > end_pos) {
-            current_pos -= 10;
+            current_pos -= ARM_STEP;
             if(current_pos < end_pos) {
                 current_pos = end_pos;
             }   
         } else {
-            current_pos += 10;
+            current_pos += ARM_STEP;
             if(current_pos > end_pos) {
                 current_pos = end_pos;
             }   
         }
         // printf("Updated: current_pos: %d\n", current_pos);
         set_servo_position(ARM, current_pos);
-        msleep(15);
+        msleep(ARM_STEP_DELAY);
     }
-    disable_servos();
+    // NOTE: servos intentionally left ENABLED so the arm holds its position
+    // (and any drum it's carrying) instead of going limp between moves.
     printf("move_arm(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+}
+
+// Same ramp as move_arm() but tuned faster, for when the arm is EMPTY.
+// Do NOT use this while carrying a drum -- the quicker start/stop can fling it.
+void move_arm_fast(int end_pos) {
+    enable_servos();
+    int current_pos = get_servo_position(ARM);
+    printf("move_arm_fast(S): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+    while (current_pos != end_pos) {
+        if (current_pos > end_pos) {
+            current_pos -= ARM_STEP_FAST;
+            if(current_pos < end_pos) {
+                current_pos = end_pos;
+            }
+        } else {
+            current_pos += ARM_STEP_FAST;
+            if(current_pos > end_pos) {
+                current_pos = end_pos;
+            }
+        }
+        set_servo_position(ARM, current_pos);
+        msleep(ARM_STEP_DELAY_FAST);
+    }
+    // servos left ENABLED so the arm holds position
+    printf("move_arm_fast(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
 }
 void move_claw(int end_pos) {
     enable_servos();
@@ -146,27 +184,27 @@ void move_claw(int end_pos) {
         set_servo_position(CLAW, current_pos);
         msleep(60);
     }
-    disable_servos();
+    // NOTE: servos left ENABLED so the claw keeps its grip force on the drum.
     printf("move_claw(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
 }
 
-void move_arm_fast_slow_down(int position) {        
+void move_arm_fast_slow_down(int position) {
     enable_servos();
-    set_servo_position(ARM,position-500);
-    disable_servos();
-    enable_servos();
-    msleep(100);
+    // Fast jump most of the way down, then ramp the rest for a soft landing.
+    int fast = position - 500;
+    if (fast < 0) fast = 0;
+    set_servo_position(ARM, fast);
+    msleep(150);            // let the fast move complete before ramping
     move_arm(position);
     msleep(100);
 }  
 
 void move_arm_fast_slow_up(int position) {
     enable_servos();
-    set_servo_position(ARM, position + 500);
-    enable_servos();
-    msleep(100);
+    set_servo_position(ARM, position + 200);
+    msleep(200);
     move_arm(position);
-    msleep(100);
+    msleep(200);
 }
 
 
@@ -285,6 +323,7 @@ void drive_distance(int distance, int speed) {
     while (abs(gmpc(MOTORl)) < distance && abs(gmpc(MOTORr)) < distance) {
         drive(speed,speed);
     }
+    ao();   // stop when target distance reached (was missing -> motors kept running)
 }
 void go_to_drums() {
     move_arm(ARM_UP);
@@ -303,7 +342,7 @@ void go_to_drums() {
 void grab_drum() {
     enable_servos();
     set_servo_position(CLAW,CLAW_CLOSE);
-    msleep(200);
+    msleep(500);
 }
 void put_drum_storage_blue() {
     msleep(200);
@@ -337,32 +376,23 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM -925
-
-#define PINK_MOVE_DRUM -825
+#define BLUE_MOVE_DRUM -940
+#define PINK_MOVE_DRUM -840
 void put_drum_storage_both(int COLOR) {
-    msleep(100);
-    int MOVE_DRUM;
-    if (COLOR == 0)
-    {
-        MOVE_DRUM = BLUE_MOVE_DRUM;
-    }
-    else
-    {
-        MOVE_DRUM = PINK_MOVE_DRUM;
-    }
-    msleep(200);
-    move_arm_fast_slow_up(ARM_UP);
-    move_drum(MOVE_DRUM, MOTOR_SPEED_1000);
-    move_arm(ARM_DOWN_STORAGE);
-    msleep(100);
+    int MOVE_DRUM = (COLOR == 0) ? BLUE_MOVE_DRUM : PINK_MOVE_DRUM;
     enable_servos();
-    set_servo_position(CLAW,CLAW_OPEN);
-    msleep(100);
-    move_arm(ARM_UP_STORAGE);
-    move_drum(-MOVE_DRUM+5,MOTOR_SPEED_1000);
-    enable_servos();
-    set_servo_position(ARM,ARM_DOWN);
+    msleep(100);                          // small settle (was 100 + 200)
+
+    move_arm_fast(ARM_UP_STORAGE);        // lift the drum -- LOADED, watch for fling
+    move_drum(MOVE_DRUM, MOTOR_SPEED_500);
+
+    move_arm_fast(ARM_DOWN_STORAGE);      // lower to drop (controlled, not an instant slam)
+    set_servo_position(CLAW, CLAW_OPEN);  // release
+    msleep(300);                          // claw opens + drum falls clear (was 500) -- VERIFY
+
+    move_arm_fast(ARM_UP_STORAGE);        // arm now EMPTY -> fast is risk-free
+    move_drum(-MOVE_DRUM + 5, MOTOR_SPEED_500);
+    move_arm_fast(ARM_DOWN);              // back to grab position, empty
 }
 void move_storage(int distance, int speed) {
     cmpc(STORAGE_MOTOR);
@@ -387,77 +417,62 @@ void move_storage2(int distance, int speed) {
     freeze(STORAGE_MOTOR);                  // stop and actively hold position
     msleep(50);                             // let it settle before next action
 }
-/*
-bool detect_pink() {
-    msleep(250);   
+#define FIRST_DRUM_TIME 10   // s, ADDS starts dispensing
+#define DRUM_INTERVAL    7.0   // s between drops
+#define DRUM_SETTLE      1  // small cushion after release
 
-    for (int i = 0; i < 10; i++) {
-        camera_update();
+double start_time;   // set at match start (after wait_for_light)
 
-        if (get_object_count(CAMERA_CHANNEL) > 0) {
-            //if (get_object_area(CAMERA_CHANNEL) > 20 {
-            return true;
-            printf("PINK DETECTED !\n");
-            // }
-        }
-
-        msleep(30);
+// wait until drum N (1-indexed) has been released
+void wait_for_drum(int n) {
+    double release = FIRST_DRUM_TIME + DRUM_INTERVAL * (n - 1) + DRUM_SETTLE;
+    while (seconds() - start_time < release) {
+        msleep(10);
     }
-
-    printf("No pink detected.\n");
-    return false;
+    printf("Drum %d ready at t=%.1fs\n", n, seconds() - start_time);
 }
-bool detect_pink_duplicate() {
-    const int AREA_THRESHOLD = 1000;
 
-    msleep(100);
-
-    for (int i = 0; i < 10; i++) {
-        camera_update();
-
-        if (get_object_count(CAMERA_CHANNEL) > 0) {
-            printf("SOME PINK DETECTED?");
-            int area = get_object_area(CAMERA_CHANNEL, 0);
-
-            if (area >= AREA_THRESHOLD) {
-                printf("PINK DETECTED! Area = %d\n", area);
-                return true;
-            }
-        }
-
-        msleep(30);
-    }
-
-    printf("No pink detected.\n");
-    return false;
-}
-*/
-
-
-// returns true if blue, false if pink
+// Returns true if the drum in view is BLUE, false if PINK.
+// Averages several frames, ignores near-ties (noise), and re-looks once
+// if it saw essentially nothing before committing to a default.
 bool drum_is_blue() {
     msleep(100);
 
-    int pink_area = 0;
-    int blue_area = 0;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        int pink_area = 0;
+        int blue_area = 0;
 
-    // average a few frames so one bad read doesn't decide it
-    for (int i = 0; i < 5; i++) {
-        camera_update();
+        // average a few frames so one bad read doesn't decide it
+        for (int i = 0; i < 5; i++) {
+            camera_update();
 
-        if (get_object_count(PINK_CAMERA_CHANNEL) > 0) {
-            pink_area += get_object_area(PINK_CAMERA_CHANNEL, 0);
+            if (get_object_count(PINK_CAMERA_CHANNEL) > 0) {
+                pink_area += get_object_area(PINK_CAMERA_CHANNEL, 0);
+            }
+            if (get_object_count(BLUE_CAMERA_CHANNEL) > 0) {
+                blue_area += get_object_area(BLUE_CAMERA_CHANNEL, 0);
+            }
+
+            msleep(30);
         }
-        if (get_object_count(BLUE_CAMERA_CHANNEL) > 0) {
-            blue_area += get_object_area(BLUE_CAMERA_CHANNEL, 0);
+
+        printf("PINK area = %d, BLUE area = %d (attempt %d)\n",
+               pink_area, blue_area, attempt);
+
+        // If we basically saw nothing, the drum may not be settled/in view yet.
+        // Only re-look on the first attempt; costs ~250ms and only when ambiguous.
+        if (pink_area < 50 && blue_area < 50 && attempt == 0) {
+            printf("drum_is_blue(): nothing seen, re-looking...\n");
+            msleep(80);
+            continue;
         }
 
-        msleep(30);
+        return (blue_area > pink_area);
     }
 
-    printf("PINK area = %d, BLUE area = %d\n", pink_area, blue_area);
-
-    return (blue_area > pink_area);   // bigger blue wins b blue, else pink
+    // Fallback: never got a confident read. Default to PINK and flag it loudly.
+    printf("drum_is_blue(): NO CONFIDENT READ -> defaulting PINK\n");
+    return false;
 }
 void go_to_post() {
     enable_servos();
@@ -499,47 +514,39 @@ void go_to_second_post() {
     right_degrees(90);
     line_follow(12000,MOTOR_SPEED_1500);
 }
-int main() {
-    
-    camera_open();
- 	enable_servos();
-    set_servo_position(PINK_CLAW, PINK_CLOSE);
-    set_servo_position(BLUE_CLAW, BLUE_CLOSE);
-    go_to_drums();
-    msleep(4750);
 
-    //put_drum_storage_blue();
+// Grab the drum first (so it's secured and stable), then read its color,
+// then store it. Doing it in this order everywhere makes detection consistent
+// and keeps a moving/just-dropped drum from being misread.
+void handle_one_drum() {
+    grab_drum();
     if (drum_is_blue()) {
         printf("BLUE\n");
-        msleep(30);
-        grab_drum();
-        msleep(40);
         put_drum_storage_both(0);
     } else {
         printf("PINK\n");
-        msleep(10);
-        grab_drum();
-        msleep(30);
         put_drum_storage_both(1);
     }
-	    	
-
-	for (int i = 0; i < 7; i++) {
-        msleep(2000);
-    	printf("Drum %d of %d\n", i + 1, 7);
-    	grab_drum();
-
-    	if (drum_is_blue()) {
-        	printf("BLUE\n");
-        	put_drum_storage_both(0);
-   		} else {
-        	printf("PINK\n");
-       	 	put_drum_storage_both(1);
-    	}
-	}
-    camera_close();
-    
-    go_to_post();
 }
 
+int main() {
+    start_time = seconds();
+    camera_open();
+    enable_servos();                 // enable once; servos stay enabled all match so the arm holds
+    set_servo_position(PINK_CLAW, PINK_CLOSE);
+    set_servo_position(BLUE_CLAW, BLUE_CLOSE);
+    go_to_drums();
 
+    wait_for_drum(1);
+    handle_one_drum();               // drum 1 (same grab->detect->store order as the loop)
+
+    for (int i = 2; i <= 8; i++) {
+        wait_for_drum(i);
+        printf("Drum %d of 8\n", i);
+        handle_one_drum();
+    }
+
+    camera_close();
+
+    go_to_post();
+}
