@@ -39,13 +39,13 @@
 #define CLAW_CLOSE 0
 #define ARM_UP 1800
 #define ARM_UP_STORAGE 1100
-#define ARM_DOWN_STORAGE 920
+#define ARM_DOWN_STORAGE 960
 #define BLUE_OPEN 2000
 #define BLUE_CLOSE 180
 #define PINK_CLOSE 1564
 #define PINK_OPEN 2047
  
-#define STORAGE_DISTANCE 15650
+#define STORAGE_DISTANCE 15500
 
 
 #define ARM_STEP        12
@@ -371,22 +371,27 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM -943
-#define PINK_MOVE_DRUM -843
-void put_drum_storage_both(int COLOR) {
+#define BLUE_MOVE_DRUM -965
+#define PINK_MOVE_DRUM -865
+void put_drum_storage_both(int COLOR, int drum_num) {
+
+        
     int MOVE_DRUM = (COLOR == 0) ? BLUE_MOVE_DRUM : PINK_MOVE_DRUM;
     enable_servos();
     msleep(100);                       
     move_arm_fast(ARM_UP_STORAGE);       
     move_drum(MOVE_DRUM, MOTOR_SPEED_500);
 
-    move_arm_fast(ARM_DOWN_STORAGE);      
+    move_arm(ARM_DOWN_STORAGE);      
+  
     set_servo_position(CLAW, CLAW_OPEN);  
     msleep(300);                          
 
     move_arm_fast(ARM_UP_STORAGE);        
     move_drum(-MOVE_DRUM + 12, MOTOR_SPEED_500);
-    move_arm_fast(ARM_DOWN);              
+    if (drum_num != 8) {
+        move_arm_fast(ARM_DOWN);    
+    }   
 }
 void move_storage(int distance, int speed) {
     cmpc(STORAGE_MOTOR);
@@ -400,7 +405,7 @@ void move_storage2(int distance, int speed) {
     cmpc(STORAGE_MOTOR);                    
 
     int dir = (distance >= 0) ? 1 : -1;   
-    speed = abs(speed) * dir;               n
+    speed = abs(speed) * dir;               
 
     mav(STORAGE_MOTOR, speed);          
 
@@ -410,6 +415,28 @@ void move_storage2(int distance, int speed) {
 
     freeze(STORAGE_MOTOR);                  
     msleep(50);                             
+}
+
+// Set by the main thread once it's done driving, to hand the final exact
+// positioning back to main (where no ao() from turns can interrupt it).
+volatile int lift_stop = 0;
+
+// Raise the storage rack toward STORAGE_DISTANCE while the robot drives to the
+// post.
+//   * Uses abs(gmpc) -- SAME as move_storage2 -- because the storage encoder
+//     counts NEGATIVE as the rack rises. Comparing raw gmpc < STORAGE_DISTANCE
+//     is always true (negative < positive), so the loop would never stop on the
+//     target and the rack would drive straight past it. abs() fixes that.
+//   * Re-commands the motor every loop so an ao() from a turn/line-follow in the
+//     main thread can't leave it stalled -- the next iteration restarts it.
+// Exits at the target, or when main signals it's done driving (lift_stop).
+void lift_storage_task() {
+    cmpc(STORAGE_MOTOR);
+    while (abs(gmpc(STORAGE_MOTOR)) < STORAGE_DISTANCE && !lift_stop) {
+        mav(STORAGE_MOTOR, MOTOR_SPEED_1500);   // re-issue each loop: survives ao()
+        msleep(10);
+    }
+    freeze(STORAGE_MOTOR);
 }
 #define FIRST_DRUM_TIME 10   // s, ADDS starts dispensing
 #define DRUM_INTERVAL    7.0   
@@ -465,6 +492,14 @@ bool drum_is_blue() {
     return false;
 }
 void go_to_post() {
+    // --- Start lifting the storage rack IMMEDIATELY ---
+    // The rack rises during the ENTIRE drive to the first post. The lift thread
+    // re-commands the motor every loop, so the ao() calls inside the turns and
+    // line-follow below can't permanently stall it -- it keeps climbing.
+    lift_stop = 0;
+    thread lift = thread_create(lift_storage_task);
+    thread_start(lift);
+
     enable_servos();
     set_servo_position(PINK_CLAW,PINK_CLOSE);
     msleep(250);
@@ -478,16 +513,34 @@ void go_to_post() {
     left_degrees(80);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1500);
-    line_follow(1000,MOTOR_SPEED_1000);
+    line_follow(1100,MOTOR_SPEED_1000);
     right_degrees(76.8);
-    move_storage2(STORAGE_DISTANCE,MOTOR_SPEED_1500);
-    msleep(40);
+
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
     msleep(3200);
     drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
     msleep(500);
     freeze(MOTORl);
     freeze(MOTORr);
+
+    // Done driving -- tell the lift thread to hand off, then join it.
+    lift_stop = 1;
+    thread_wait(lift);
+    thread_destroy(lift);
+
+    // Finish to the EXACT top, CONTINUING on the same counter (no cmpc reset, no
+    // "remaining" arithmetic that could get the sign wrong). If the concurrent
+    // lift already reached the target, abs(gmpc) >= STORAGE_DISTANCE and this
+    // loop does nothing. Nothing can ao() the motor here, so it lands cleanly.
+    printf("Lift at %d of %d before finishing\n",
+           abs(gmpc(STORAGE_MOTOR)), STORAGE_DISTANCE);
+    while (abs(gmpc(STORAGE_MOTOR)) < STORAGE_DISTANCE) {
+        mav(STORAGE_MOTOR, MOTOR_SPEED_1500);
+        msleep(10);
+    }
+    freeze(STORAGE_MOTOR);
+    printf("Lift finished at %d\n", abs(gmpc(STORAGE_MOTOR)));
+
     enable_servos();
     set_servo_position(PINK_CLAW,PINK_OPEN);
     msleep(500);
@@ -505,23 +558,25 @@ void go_to_second_post() {
     line_follow(16000,MOTOR_SPEED_1500);
     right_degrees(175);
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
-    msleep(1900);
+    msleep(1800);
     left_degrees(14);
     enable_servos();
     set_servo_position(BLUE_CLAW,BLUE_OPEN);
+    right_degrees(5);
 }
 
 // Grab the drum first (so it's secured and stable), then read its color,
 // then store it. Doing it in this order everywhere makes detection consistent
 // and keeps a moving/just-dropped drum from being misread.
-void handle_one_drum() {
+void handle_one_drum(int drum_num) {
+    
     grab_drum();
     if (drum_is_blue()) {
         printf("BLUE\n");
-        put_drum_storage_both(0);
+        put_drum_storage_both(0,drum_num);
     } else {
         printf("PINK\n");
-        put_drum_storage_both(1);
+        put_drum_storage_both(1,drum_num);
     }
 }
 
@@ -535,12 +590,12 @@ int main() {
     go_to_drums();
 
     wait_for_drum(1);
-    handle_one_drum();        
+    handle_one_drum(1);        
 
     for (int i = 2; i <= 8; i++) {
         wait_for_drum(i);
         printf("Drum %d of 8\n", i);
-        handle_one_drum();
+        handle_one_drum(i);
     }
 
     camera_close();
@@ -550,4 +605,4 @@ int main() {
     int final_time = seconds();
     int elapsed_time = final_time - start_time;
     printf("Elapsed Time = %d",elapsed_time);
-} 
+}
