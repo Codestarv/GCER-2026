@@ -1,0 +1,622 @@
+#include <kipr/wombat.h>
+#include <math.h>
+#include <stdlib.h>
+#include<stdint.h>
+#include<stdbool.h>
+
+
+/* Overall Definitions */
+#define BLACK 3000
+#define WHITE 2000
+
+#define MOTOR_SPEED_500 500
+#define MOTOR_SPEED_1000 1000
+#define MOTOR_SPEED_750 750
+#define MOTOR_SPEED_1500 1500
+#define MOTOR_SPEED_350 350
+
+
+#define MOTORl 3
+#define ARM_MOTOR 1
+#define MOTORr 0
+#define STORAGE_MOTOR 2
+
+#define PINK_CAMERA_CHANNEL 0
+#define BLUE_CAMERA_CHANNEL 1
+
+
+#define SENSORl 0
+#define SENSORr 5
+
+// Touch sensor / limit switch. NOTE: this is a DIGITAL port, which is separate
+// from the analog ports above -- analog 0 (SENSORl) and digital 0 are different
+// physical connectors on the Wombat.
+#define TOUCH_SENSOR 0
+
+#define ARM 1
+#define CLAW 0
+#define PINK_CLAW 3
+#define BLUE_CLAW 2
+
+
+#define ARM_DOWN 430
+#define CLAW_OPEN 1900
+#define CLAW_CLOSE 100
+#define ARM_UP 1800
+#define ARM_UP_STORAGE 1100
+#define ARM_DOWN_STORAGE 960
+#define BLUE_OPEN 180
+#define BLUE_CLOSE 1600
+#define PINK_CLOSE 150
+#define PINK_OPEN 1547
+ 
+#define STORAGE_DISTANCE 15350
+
+
+#define ARM_STEP        12
+#define ARM_STEP_DELAY  8
+
+
+#define ARM_STEP_FAST        18
+#define ARM_STEP_DELAY_FAST  6
+
+void drive(int speed1, int speed2) {
+    mav(MOTORl, speed1);
+    mav(MOTORr, speed2);
+}
+void drive_till_blk() {
+    while (analog(SENSORl) < BLACK || analog(SENSORr) < BLACK) {
+        drive(1500,1500);
+    }
+}
+
+void move_drum(int distance, int speed) {
+    cmpc(ARM_MOTOR);
+
+    if (distance > 0) {
+        mav(ARM_MOTOR, abs(speed));
+        while (gmpc(ARM_MOTOR) < distance) {
+            msleep(1);
+        }
+    } else {
+        mav(ARM_MOTOR, -abs(speed));
+        while (gmpc(ARM_MOTOR) > distance) {
+            msleep(1);
+        }
+    }
+	printf("Expected Distance = %d. Actual Distance = %d", distance, gmpc(ARM_MOTOR));
+    ao();
+}
+
+void move_drums(int distance, int max_speed) {
+    cmpc(ARM_MOTOR);
+
+    while (1) {
+        int error = distance - gmpc(ARM_MOTOR);
+
+   
+        if (abs(error) <= 5)
+            break;
+
+
+        int speed = error * 3;  
+
+ 
+        if (speed > max_speed)
+            speed = max_speed;
+        if (speed < -max_speed)
+            speed = -max_speed;
+
+
+        if (abs(speed) < 150)
+            speed = (speed > 0) ? 150 : -150;
+
+        mav(ARM_MOTOR, speed);
+        msleep(10);
+    }
+
+    ao();
+}
+void move_arm(int end_pos) {
+    enable_servos();
+    int current_pos = get_servo_position(ARM);
+    printf("move_arm(S): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+    while (current_pos != end_pos) {
+        if (current_pos > end_pos) {
+            current_pos -= ARM_STEP;
+            if(current_pos < end_pos) {
+                current_pos = end_pos;
+            }   
+        } else {
+            current_pos += ARM_STEP;
+            if(current_pos > end_pos) {
+                current_pos = end_pos;
+            }   
+        }
+        // printf("Updated: current_pos: %d\n", current_pos);
+        set_servo_position(ARM, current_pos);
+        msleep(ARM_STEP_DELAY);
+    }
+
+    printf("move_arm(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+}
+
+
+void move_arm_fast(int end_pos) {
+    enable_servos();
+    int current_pos = get_servo_position(ARM);
+    printf("move_arm_fast(S): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+    while (current_pos != end_pos) {
+        if (current_pos > end_pos) {
+            current_pos -= ARM_STEP_FAST;
+            if(current_pos < end_pos) {
+                current_pos = end_pos;
+            }
+        } else {
+            current_pos += ARM_STEP_FAST;
+            if(current_pos > end_pos) {
+                current_pos = end_pos;
+            }
+        }
+        set_servo_position(ARM, current_pos);
+        msleep(ARM_STEP_DELAY_FAST);
+    }
+
+    printf("move_arm_fast(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+}
+void move_claw(int end_pos) {
+    enable_servos();
+    int current_pos = get_servo_position(CLAW);
+    printf("move_claw(S): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+    while (current_pos != end_pos) {
+        if (current_pos > end_pos) {
+            current_pos -= 30;
+            if(current_pos < end_pos) {
+                current_pos = end_pos;
+            }   
+        } else {
+            current_pos += 30;
+            if(current_pos > end_pos) {
+                current_pos = end_pos;
+            }   
+        }
+        // printf("Updated: current_pos: %d\n", current_pos);
+        set_servo_position(CLAW, current_pos);
+        msleep(60);
+    }
+ 
+    printf("move_claw(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
+}
+
+void move_arm_fast_slow_down(int position) {
+    enable_servos();
+    // Fast jump most of the way down, then ramp the rest for a soft landing.
+    int fast = position - 500;
+    if (fast < 0) fast = 0;
+    set_servo_position(ARM, fast);
+    msleep(150);            // let the fast move complete before ramping
+    move_arm(position);
+    msleep(100);
+}  
+
+void move_arm_fast_slow_up(int position) {
+    enable_servos();
+    set_servo_position(ARM, position + 200);
+    msleep(200);
+    move_arm(position);
+    msleep(200);
+}
+
+
+void right_turn() {
+    printf("RIGHT TURN");
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    while(gmpc(MOTORl) > -1000 && gmpc(MOTORr) > -1000){
+        drive(MOTOR_SPEED_500, -MOTOR_SPEED_500);
+    }
+    ao();
+    msleep(50);
+}
+void right_10() {
+    printf("RIGHT TURN");
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    while(gmpc(MOTORl) > -100 && gmpc(MOTORr) > -100){
+        drive(MOTOR_SPEED_500, -MOTOR_SPEED_500);
+    }
+    ao();
+    msleep(50);
+}
+void right_degrees(int degrees) {
+    printf("RIGHT TURN");
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    int ticks = 12.7 * degrees;
+    while(gmpc(MOTORl) < ticks || gmpc(MOTORr) > -ticks){
+        drive(MOTOR_SPEED_500, -MOTOR_SPEED_500);
+    }
+    ao();
+    msleep(50);
+}
+void left_degrees(int degrees) {
+    printf("LEFT TURN START\n");
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    int ticks = 12.7 * degrees;
+    while(gmpc(MOTORl) > -ticks || gmpc(MOTORr) < ticks){
+        drive(-MOTOR_SPEED_500, MOTOR_SPEED_500);
+    }
+    ao();
+    msleep(50);
+    printf("LEFT TURN END: Motor_L= %d, Motor_R= %d\n", gmpc(MOTORl),  gmpc(MOTORr));
+}
+
+
+void back_till_blk(){
+    while (analog(SENSORl) <= BLACK && analog(SENSORr) <= BLACK) {
+        drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    }
+}
+void reverse_line_follow(int distance, int speed) {
+    int high = -speed;
+    int low = (int)(-0.6 * speed);
+
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    msleep(100);
+    printf("reverse_line_follow(): distance=%d, speed=%d\n", distance, speed);
+
+    while (abs(gmpc(MOTORl)) < distance || abs(gmpc(MOTORr)) < distance) {
+        int sl = analog(SENSORl);
+        int sr = analog(SENSORr);
+
+        if (sl >= BLACK && sr >= BLACK) {
+            drive(high, high);   // both on black, go straight
+        } else if (sl >= BLACK) {
+            drive(low, high);    // flipped from before
+        } else if (sr >= BLACK) {
+            drive(high, low);    // flipped from before
+        } else {
+            drive(high, high);   // lost line, go straight
+        }
+        msleep(1);
+    }
+
+    ao();
+    msleep(50);
+}
+
+
+void line_follow(int distance, int speed) {
+    int high = speed;
+    int low = 0.6 * speed;
+
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    msleep(100);
+    printf("line_follow(): distance=%d, speed=%d\n", distance, speed);
+
+    while (abs(gmpc(MOTORl)) < distance || abs(gmpc(MOTORr)) < distance) {
+        int sl = analog(SENSORl);
+        int sr = analog(SENSORr);
+
+        if (sl >= BLACK && sr >= BLACK) {
+            drive(high, high);   // both on black, go straight
+        } else if (sl >= BLACK) {
+            drive(low, high);    // flipped from before
+        } else if (sr >= BLACK) {
+            drive(high, low);    // flipped from before
+        } else {
+            drive(high, high);   // lost line, go straight
+        }
+        msleep(1);
+    }
+
+    ao();
+    msleep(50);
+}
+
+void drive_distance(int distance, int speed) {
+    cmpc(MOTORl);
+    cmpc(MOTORr);
+    while (abs(gmpc(MOTORl)) < distance && abs(gmpc(MOTORr)) < distance) {
+        drive(speed,speed);
+    }
+    ao();   
+}
+void go_to_drums() {
+    move_arm(ARM_UP);
+    enable_servos();
+    move_claw(CLAW_OPEN);
+    msleep(3000);
+    drive_till_blk();
+    drive(1500,1500);
+    msleep(500);
+    drive_till_blk();
+    drive(1000,1000);
+    msleep(950);
+    ao();
+    move_arm(ARM_DOWN);
+    ao();
+}
+void grab_drum() {
+    enable_servos();
+    set_servo_position(CLAW,CLAW_CLOSE);
+    msleep(500);
+}
+void put_drum_storage_blue() {
+    msleep(200);
+    move_arm(ARM_UP);
+    move_drum(-910, MOTOR_SPEED_1000);
+
+    move_arm(ARM_DOWN_STORAGE);
+    enable_servos();
+	msleep(100);
+    set_servo_position(CLAW,CLAW_OPEN);
+    msleep(100);
+    move_arm(ARM_UP_STORAGE);
+    move_drum(915,MOTOR_SPEED_1000);
+    enable_servos();
+    set_servo_position(ARM,ARM_DOWN);
+
+}
+void put_drum_storage_pink() {
+    msleep(200);
+    move_arm(ARM_UP);
+    move_drum(-850, MOTOR_SPEED_1000);
+    move_arm(ARM_DOWN_STORAGE);
+    enable_servos();
+	msleep(100);
+    set_servo_position(CLAW,CLAW_OPEN);
+    msleep(100);
+    move_arm(ARM_UP_STORAGE);
+    move_drum(860,MOTOR_SPEED_1000);
+    enable_servos();
+    set_servo_position(ARM,ARM_DOWN);
+}
+
+
+#define BLUE_MOVE_DRUM -1080
+#define PINK_MOVE_DRUM -970
+void put_drum_storage_both(int COLOR, int drum_num) {
+
+        
+    int MOVE_DRUM = (COLOR == 0) ? BLUE_MOVE_DRUM : PINK_MOVE_DRUM;
+    enable_servos();
+    msleep(100);                       
+    move_arm_fast(ARM_UP_STORAGE);       
+    move_drum(MOVE_DRUM, MOTOR_SPEED_500);
+
+    move_arm(ARM_DOWN_STORAGE);     
+    set_servo_position(CLAW, CLAW_OPEN);  
+    msleep(500);                          
+
+    move_arm_fast(ARM_UP_STORAGE);        
+    move_drum(-MOVE_DRUM + 10, MOTOR_SPEED_500);      
+
+    if (drum_num != 8) {
+        move_arm_fast(ARM_DOWN);
+    }
+    if (drum_num != 8) {
+        move_arm_fast(ARM_DOWN);    
+    }   
+}
+void move_storage(int distance, int speed) {
+    cmpc(STORAGE_MOTOR);
+    while((gmpc(STORAGE_MOTOR) < distance)) {
+        printf("GMPC: motor_position=%d\n", gmpc(STORAGE_MOTOR));
+        mav(STORAGE_MOTOR, speed);
+    }
+}
+
+void move_storage2(int distance, int speed) {
+    cmpc(STORAGE_MOTOR);                    
+
+    int dir = (distance >= 0) ? 1 : -1;   
+    speed = abs(speed) * dir;               
+
+    mav(STORAGE_MOTOR, speed);          
+
+    while (abs(gmpc(STORAGE_MOTOR)) < abs(distance)) {
+        msleep(10);                         
+    }
+
+    freeze(STORAGE_MOTOR);                  
+    msleep(50);                             
+}
+
+// Like move_storage2, but instead of a fixed distance it drives the storage
+// motor until the touch sensor on digital port 0 is pressed, then stops and
+// holds. The sign of `speed` sets direction (positive = same way move_storage2
+// raises). Great as a "homing" move: a limit switch is an absolute stop, so it
+// doesn't drift the way encoder counts can over many runs.
+//
+// Polarity note: this assumes the switch reads 1 when pressed (the usual case).
+// If it stops instantly / never stops, flip the loop test to !digital(...).
+//
+// The motor command is RE-ISSUED every loop. That's harmless in normal use, and
+// it's what makes this safe to run in a thread: if an ao() elsewhere cuts the
+// motor, the next iteration restarts it, so the rack still reaches the switch.
+void move_storage_until_touch(int speed) {
+    printf("move_storage_until_touch(): speed=%d, waiting for touch...\n", speed);
+    cmpc(STORAGE_MOTOR);            // optional: lets us report how far it went
+
+    while (digital(TOUCH_SENSOR) == 0) {   // 0 = not pressed -> keep moving
+        mav(STORAGE_MOTOR, speed);          // re-issue each loop: survives ao()
+        msleep(5);                          // poll fast so it stops promptly on contact
+    }
+
+    freeze(STORAGE_MOTOR);                  // stop and actively hold
+    msleep(50);
+    printf("move_storage_until_touch(): pressed at %d ticks\n",
+           gmpc(STORAGE_MOTOR));
+}
+
+// Threaded homing lift: raises the rack to the top limit switch while the robot
+// drives to the post. Just wraps move_storage_until_touch (which re-issues the
+// motor command each loop, so the ao() calls in the turns/line-follow can't
+// stall it). No lift_stop / encoder top-up needed anymore -- the switch IS the
+// stop, so the thread simply runs until it's home and then holds.
+void lift_storage_task() {
+    move_storage_until_touch(MOTOR_SPEED_1500);
+}
+#define FIRST_DRUM_TIME 10   // s, ADDS starts dispensing
+#define DRUM_INTERVAL    7.0   
+#define DRUM_SETTLE      1  
+
+double start_time;   
+
+void wait_for_drum(int n) {
+    double release = FIRST_DRUM_TIME + DRUM_INTERVAL * (n - 1) + DRUM_SETTLE;
+    while (seconds() - start_time < release) {
+        msleep(10);
+    }
+    printf("Drum %d ready at t=%.1fs\n", n, seconds() - start_time);
+}
+
+
+bool drum_is_blue() {
+    msleep(100);
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+        int pink_area = 0;
+        int blue_area = 0;
+
+   
+        for (int i = 0; i < 5; i++) {
+            camera_update();
+
+            if (get_object_count(PINK_CAMERA_CHANNEL) > 0) {
+                pink_area += get_object_area(PINK_CAMERA_CHANNEL, 0);
+            }
+            if (get_object_count(BLUE_CAMERA_CHANNEL) > 0) {
+                blue_area += get_object_area(BLUE_CAMERA_CHANNEL, 0);
+            }
+
+            msleep(30);
+        }
+
+        printf("PINK area = %d, BLUE area = %d (attempt %d)\n",
+               pink_area, blue_area, attempt);
+
+
+        if (pink_area < 50 && blue_area < 50 && attempt == 0) {
+            printf("drum_is_blue(): nothing seen, re-looking...\n");
+            msleep(80);
+            continue;
+        }
+
+        return (blue_area > pink_area);
+    }
+
+    // Fallback: never got a confident read. Default to PINK and flag it loudly.
+    printf("drum_is_blue(): NO CONFIDENT READ -> defaulting PINK\n");
+    return false;
+}
+void go_to_post() {
+    // --- Start homing the storage rack to its top limit switch IMMEDIATELY ---
+    // The rack rises during the ENTIRE drive to the first post. The thread
+    // re-commands the motor every loop, so the ao() calls in the turns and
+    // line-follow below can't stall it -- it keeps climbing until the switch
+    // trips. We join before opening the claw, so the rack is guaranteed home.
+    thread lift = thread_create(lift_storage_task);
+    thread_start(lift);
+
+    enable_servos();
+    set_servo_position(PINK_CLAW,PINK_CLOSE);
+    msleep(250);
+    move_arm(ARM_UP);
+    back_till_blk();
+    drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    msleep(600);
+    back_till_blk();
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+    msleep(900);
+    left_degrees(80);
+    drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    msleep(1500);
+    ao();
+    msleep(5000);
+    line_follow(900,MOTOR_SPEED_1000);
+    right_degrees(76.8);
+
+    drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
+    msleep(3200);
+    drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
+    msleep(500);
+    freeze(MOTORl);
+    freeze(MOTORr);
+
+    // Wait until the rack has reached its limit switch. If it already tripped
+    // during the drive this returns immediately; otherwise it blocks until home.
+    thread_wait(lift);
+    thread_destroy(lift);
+
+    enable_servos();
+    set_servo_position(PINK_CLAW,PINK_OPEN);
+    msleep(500);
+
+}
+
+void go_to_second_post() {
+    drive_till_blk();
+    drive(1500,1500);
+    msleep(500);
+    drive_till_blk();
+    drive(1000,1000);
+    msleep(600);
+    left_degrees(50);
+    line_follow(16100,MOTOR_SPEED_1500);
+    right_degrees(175);
+    drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
+    msleep(1800);
+    left_degrees(14);
+    enable_servos();
+    set_servo_position(BLUE_CLAW,BLUE_OPEN);
+    msleep(50);
+    right_degrees(5);
+}
+
+
+// Grab the drum first (so it's secured and stable), then read its color,
+// then store it. Doing it in this order everywhere makes detection consistent
+// and keeps a moving/just-dropped drum from being misread.
+void handle_one_drum(int drum_num) {
+    
+    grab_drum();
+    if (drum_is_blue()) {
+        printf("BLUE\n");
+        put_drum_storage_both(0,drum_num);
+    } else {
+        printf("PINK\n");
+        put_drum_storage_both(1,drum_num);
+    }
+}
+
+int main() {
+
+    start_time = seconds();
+    camera_open();
+    enable_servos();                 // enable once; servos stay enabled all match so the arm holds
+    set_servo_position(PINK_CLAW, PINK_CLOSE);
+    set_servo_position(BLUE_CLAW, BLUE_CLOSE);
+    go_to_drums();
+
+    wait_for_drum(1);
+    handle_one_drum(1);        
+
+    for (int i = 2; i <= 8; i++) {
+        wait_for_drum(i);
+        printf("Drum %d of 8\n", i);
+        handle_one_drum(i);
+    }
+
+    camera_close();
+
+    go_to_post();
+    go_to_second_post();
+    int final_time = seconds();
+    int elapsed_time = final_time - start_time;
+    printf("Elapsed Time = %d",elapsed_time);
+}
