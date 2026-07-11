@@ -21,7 +21,7 @@
 #define BLACK 3000
 #define WHITE 2000
 #define RIGHT_MOTOR_CORRECTION 1.002
-#define CORRECTION 0.3
+#define CORRECTION 0.6
 
 // --- Motor Speeds ---
 #define MOTOR_SPEED_250 250
@@ -35,7 +35,7 @@
 #define CLAW_CONE 560
 #define CLAW_BOTGUY 874    
 #define CLAW_DOOR 1080
-#define CLAW_CLOSE 1130
+#define CLAW_CLOSE 1243
 
 // --- Arm Positions ---
 #define ARM_START 300
@@ -299,24 +299,25 @@ void move_to_botguy() {
     ao();
     
     drive(-MOTOR_SPEED_1500, -MOTOR_SPEED_1500);
-    msleep(1500);
+    msleep(1000);
     ao();
 }
 
 void open_doors() {
     move_arm_fast_slow_down(ARM_DOOR);
     drive_till_blk();
-    line_follow_2(630, MOTOR_SPEED_1000);
+    line_follow_2(632, MOTOR_SPEED_1000);
+    drive(740,1000);
     right_degrees_speed(35);
     
     move_arm(ARM_DOWN_BOTGUY);
     msleep(50);
     
-    left_degrees(60);
+    left_degrees(70);
     ao();
     msleep(100);
     
-    right_degrees(35);
+    right_degrees(45);
     left_degrees(5);
     msleep(100);
     
@@ -342,7 +343,7 @@ void open_doors() {
     set_servo_position(CLAW, CLAW_OPEN);
     msleep(200);
     
-    right_degrees_less(1);
+    right_degrees_less(3);
     drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
     msleep(260);
     ao();
@@ -364,6 +365,7 @@ void open_doors() {
     ao();
     
     move_arm(ARM_BOTGUY_CARRY);
+    msleep(3000);
 }
 
 void deliver_botguy() {
@@ -371,12 +373,11 @@ void deliver_botguy() {
     drive(-MOTOR_SPEED_1500, -MOTOR_SPEED_1500);
     msleep(300);
     
-    right_degrees(84);
+    right_degrees(83.5);
     drive_till_blk_time(1);
     
     drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
     msleep(300);
-    
     drive_till_blk();
     drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
     msleep(3100);
