@@ -16,9 +16,9 @@
 #define MOTOR_SPEED_350 350
 
 
-#define MOTORl 0
+#define MOTORl 3
 #define ARM_MOTOR 1
-#define MOTORr 3
+#define MOTORr 0
 #define STORAGE_MOTOR 2
 
 #define PINK_CAMERA_CHANNEL 0
@@ -28,24 +28,29 @@
 #define SENSORl 0
 #define SENSORr 5
 
+// Touch sensor / limit switch. NOTE: this is a DIGITAL port, which is separate
+// from the analog ports above -- analog 0 (SENSORl) and digital 0 are different
+// physical connectors on the Wombat.
+#define TOUCH_SENSOR 0
+
 #define ARM 1
 #define CLAW 0
 #define PINK_CLAW 3
 #define BLUE_CLAW 2
 
 
-#define ARM_DOWN 250
+#define ARM_DOWN 430
 #define CLAW_OPEN 1900
-#define CLAW_CLOSE 0
+#define CLAW_CLOSE 100
 #define ARM_UP 1800
 #define ARM_UP_STORAGE 1100
 #define ARM_DOWN_STORAGE 960
-#define BLUE_OPEN 2000
-#define BLUE_CLOSE 180
-#define PINK_CLOSE 1564
-#define PINK_OPEN 2047
+#define BLUE_OPEN 180
+#define BLUE_CLOSE 1600
+#define PINK_CLOSE 150
+#define PINK_OPEN 1547
  
-#define STORAGE_DISTANCE 15500
+#define STORAGE_DISTANCE 15350
 
 
 #define ARM_STEP        12
@@ -79,7 +84,7 @@ void move_drum(int distance, int speed) {
             msleep(1);
         }
     }
-
+	printf("Expected Distance = %d. Actual Distance = %d", distance, gmpc(ARM_MOTOR));
     ao();
 }
 
@@ -324,12 +329,13 @@ void go_to_drums() {
     move_arm(ARM_UP);
     enable_servos();
     move_claw(CLAW_OPEN);
+    msleep(3000);
     drive_till_blk();
     drive(1500,1500);
     msleep(500);
     drive_till_blk();
     drive(1000,1000);
-    msleep(1000);
+    msleep(950);
     ao();
     move_arm(ARM_DOWN);
     ao();
@@ -371,8 +377,8 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM -965
-#define PINK_MOVE_DRUM -865
+#define BLUE_MOVE_DRUM -935
+#define PINK_MOVE_DRUM -835
 void put_drum_storage_both(int COLOR, int drum_num) {
 
         
@@ -382,13 +388,16 @@ void put_drum_storage_both(int COLOR, int drum_num) {
     move_arm_fast(ARM_UP_STORAGE);       
     move_drum(MOVE_DRUM, MOTOR_SPEED_500);
 
-    move_arm(ARM_DOWN_STORAGE);      
-  
+    move_arm(ARM_DOWN_STORAGE);     
     set_servo_position(CLAW, CLAW_OPEN);  
-    msleep(300);                          
+    msleep(500);                          
 
     move_arm_fast(ARM_UP_STORAGE);        
-    move_drum(-MOVE_DRUM + 12, MOTOR_SPEED_500);
+    move_drum(-MOVE_DRUM + 7, MOTOR_SPEED_500);      
+
+    if (drum_num != 8) {
+        move_arm_fast(ARM_DOWN);
+    }
     if (drum_num != 8) {
         move_arm_fast(ARM_DOWN);    
     }   
@@ -417,26 +426,40 @@ void move_storage2(int distance, int speed) {
     msleep(50);                             
 }
 
-// Set by the main thread once it's done driving, to hand the final exact
-// positioning back to main (where no ao() from turns can interrupt it).
-volatile int lift_stop = 0;
+// Like move_storage2, but instead of a fixed distance it drives the storage
+// motor until the touch sensor on digital port 0 is pressed, then stops and
+// holds. The sign of `speed` sets direction (positive = same way move_storage2
+// raises). Great as a "homing" move: a limit switch is an absolute stop, so it
+// doesn't drift the way encoder counts can over many runs.
+//
+// Polarity note: this assumes the switch reads 1 when pressed (the usual case).
+// If it stops instantly / never stops, flip the loop test to !digital(...).
+//
+// The motor command is RE-ISSUED every loop. That's harmless in normal use, and
+// it's what makes this safe to run in a thread: if an ao() elsewhere cuts the
+// motor, the next iteration restarts it, so the rack still reaches the switch.
+void move_storage_until_touch(int speed) {
+    printf("move_storage_until_touch(): speed=%d, waiting for touch...\n", speed);
+    cmpc(STORAGE_MOTOR);            // optional: lets us report how far it went
 
-// Raise the storage rack toward STORAGE_DISTANCE while the robot drives to the
-// post.
-//   * Uses abs(gmpc) -- SAME as move_storage2 -- because the storage encoder
-//     counts NEGATIVE as the rack rises. Comparing raw gmpc < STORAGE_DISTANCE
-//     is always true (negative < positive), so the loop would never stop on the
-//     target and the rack would drive straight past it. abs() fixes that.
-//   * Re-commands the motor every loop so an ao() from a turn/line-follow in the
-//     main thread can't leave it stalled -- the next iteration restarts it.
-// Exits at the target, or when main signals it's done driving (lift_stop).
-void lift_storage_task() {
-    cmpc(STORAGE_MOTOR);
-    while (abs(gmpc(STORAGE_MOTOR)) < STORAGE_DISTANCE && !lift_stop) {
-        mav(STORAGE_MOTOR, MOTOR_SPEED_1500);   // re-issue each loop: survives ao()
-        msleep(10);
+    while (digital(TOUCH_SENSOR) == 0) {   // 0 = not pressed -> keep moving
+        mav(STORAGE_MOTOR, speed);          // re-issue each loop: survives ao()
+        msleep(5);                          // poll fast so it stops promptly on contact
     }
-    freeze(STORAGE_MOTOR);
+
+    freeze(STORAGE_MOTOR);                  // stop and actively hold
+    msleep(50);
+    printf("move_storage_until_touch(): pressed at %d ticks\n",
+           gmpc(STORAGE_MOTOR));
+}
+
+// Threaded homing lift: raises the rack to the top limit switch while the robot
+// drives to the post. Just wraps move_storage_until_touch (which re-issues the
+// motor command each loop, so the ao() calls in the turns/line-follow can't
+// stall it). No lift_stop / encoder top-up needed anymore -- the switch IS the
+// stop, so the thread simply runs until it's home and then holds.
+void lift_storage_task() {
+    move_storage_until_touch(MOTOR_SPEED_1500);
 }
 #define FIRST_DRUM_TIME 10   // s, ADDS starts dispensing
 #define DRUM_INTERVAL    7.0   
@@ -492,11 +515,11 @@ bool drum_is_blue() {
     return false;
 }
 void go_to_post() {
-    // --- Start lifting the storage rack IMMEDIATELY ---
-    // The rack rises during the ENTIRE drive to the first post. The lift thread
-    // re-commands the motor every loop, so the ao() calls inside the turns and
-    // line-follow below can't permanently stall it -- it keeps climbing.
-    lift_stop = 0;
+    // --- Start homing the storage rack to its top limit switch IMMEDIATELY ---
+    // The rack rises during the ENTIRE drive to the first post. The thread
+    // re-commands the motor every loop, so the ao() calls in the turns and
+    // line-follow below can't stall it -- it keeps climbing until the switch
+    // trips. We join before opening the claw, so the rack is guaranteed home.
     thread lift = thread_create(lift_storage_task);
     thread_start(lift);
 
@@ -513,7 +536,9 @@ void go_to_post() {
     left_degrees(80);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1500);
-    line_follow(1100,MOTOR_SPEED_1000);
+    ao();
+    msleep(5000);
+    line_follow(900,MOTOR_SPEED_1000);
     right_degrees(76.8);
 
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
@@ -523,23 +548,10 @@ void go_to_post() {
     freeze(MOTORl);
     freeze(MOTORr);
 
-    // Done driving -- tell the lift thread to hand off, then join it.
-    lift_stop = 1;
+    // Wait until the rack has reached its limit switch. If it already tripped
+    // during the drive this returns immediately; otherwise it blocks until home.
     thread_wait(lift);
     thread_destroy(lift);
-
-    // Finish to the EXACT top, CONTINUING on the same counter (no cmpc reset, no
-    // "remaining" arithmetic that could get the sign wrong). If the concurrent
-    // lift already reached the target, abs(gmpc) >= STORAGE_DISTANCE and this
-    // loop does nothing. Nothing can ao() the motor here, so it lands cleanly.
-    printf("Lift at %d of %d before finishing\n",
-           abs(gmpc(STORAGE_MOTOR)), STORAGE_DISTANCE);
-    while (abs(gmpc(STORAGE_MOTOR)) < STORAGE_DISTANCE) {
-        mav(STORAGE_MOTOR, MOTOR_SPEED_1500);
-        msleep(10);
-    }
-    freeze(STORAGE_MOTOR);
-    printf("Lift finished at %d\n", abs(gmpc(STORAGE_MOTOR)));
 
     enable_servos();
     set_servo_position(PINK_CLAW,PINK_OPEN);
@@ -555,15 +567,17 @@ void go_to_second_post() {
     drive(1000,1000);
     msleep(600);
     left_degrees(50);
-    line_follow(16000,MOTOR_SPEED_1500);
+    line_follow(16100,MOTOR_SPEED_1500);
     right_degrees(175);
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
     msleep(1800);
     left_degrees(14);
     enable_servos();
     set_servo_position(BLUE_CLAW,BLUE_OPEN);
+    msleep(50);
     right_degrees(5);
 }
+
 
 // Grab the drum first (so it's secured and stable), then read its color,
 // then store it. Doing it in this order everywhere makes detection consistent
