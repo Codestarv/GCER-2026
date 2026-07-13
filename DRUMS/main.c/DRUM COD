@@ -47,7 +47,7 @@
 #define CLAW_CLOSE 0
 #define ARM_UP 1800
 #define ARM_UP_STORAGE 1250
-#define ARM_DOWN_STORAGE 1200
+#define ARM_DOWN_STORAGE 1250
 #define BLUE_OPEN 180
 #define BLUE_CLOSE 1600
 #define PINK_CLOSE 150
@@ -73,6 +73,37 @@ void drive_till_blk() {
     }
 }
 
+#define DRUM_SLOW_ZONE 300   // ticks from target where we drop to slow speed
+#define DRUM_SLOW_SPEED 250  // final approach speed
+
+void move_drum2(int distance, int speed) {
+    int fast = abs(speed);
+    int slow = (fast < DRUM_SLOW_SPEED) ? fast : DRUM_SLOW_SPEED;
+    int slowed = 0;
+
+    cmpc(ARM_MOTOR);
+    if (distance > 0) {
+        mav(ARM_MOTOR, fast);
+        while (gmpc(ARM_MOTOR) < distance) {
+            if (!slowed && gmpc(ARM_MOTOR) > distance - DRUM_SLOW_ZONE) {
+                mav(ARM_MOTOR, slow);
+                slowed = 1;
+            }
+            msleep(1);
+        }
+    } else {
+        mav(ARM_MOTOR, -fast);
+        while (gmpc(ARM_MOTOR) > distance) {
+            if (!slowed && gmpc(ARM_MOTOR) < distance + DRUM_SLOW_ZONE) {
+                mav(ARM_MOTOR, -slow);
+                slowed = 1;
+            }
+            msleep(1);
+        }
+    }
+    printf("Expected Distance = %d. Actual Distance = %d", distance, gmpc(ARM_MOTOR));
+    ao();
+}
 void move_drum(int distance, int speed) {
     cmpc(ARM_MOTOR);
 
@@ -381,8 +412,8 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM -1090
-#define PINK_MOVE_DRUM -940
+#define BLUE_MOVE_DRUM -1110
+#define PINK_MOVE_DRUM -985
 void put_drum_storage_both(int COLOR, int drum_num) {
 
         
@@ -391,11 +422,11 @@ void put_drum_storage_both(int COLOR, int drum_num) {
     msleep(100);                       
     move_arm_fast(ARM_UP_STORAGE);       
     move_drum(MOVE_DRUM, MOTOR_SPEED_500);
-
+	
     move_arm(ARM_DOWN_STORAGE); 
-    msleep(100);
+    msleep(500);
     set_servo_position(CLAW, CLAW_OPEN);  
-    msleep(500);                          
+    msleep(1000);                          
 
     move_arm_fast(ARM_UP_STORAGE);        
     move_drum(-MOVE_DRUM+6, MOTOR_SPEED_500);      
@@ -619,6 +650,7 @@ void handle_one_drum(int drum_num) {
 }
 
 int main() {
+    
     shut_down_in(119);
     start_time = seconds();
     camera_open();
@@ -644,6 +676,7 @@ int main() {
     int final_time = seconds();
     int elapsed_time = final_time - start_time;
     printf("Elapsed Time = %d",elapsed_time);
+    
     
  
     
