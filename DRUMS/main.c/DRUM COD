@@ -415,8 +415,8 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM -1110
-#define PINK_MOVE_DRUM -985
+#define BLUE_MOVE_DRUM -1115
+#define PINK_MOVE_DRUM -990
 void put_drum_storage_both(int COLOR, int drum_num) {
 
         
@@ -489,7 +489,7 @@ void lift_storage_task() {
 }
 
 
-#define FIRST_DRUM_MS    10000   // ms, ADDS starts dispensing
+#define FIRST_DRUM_MS    9500   // ms, ADDS starts dispensing
 #define DRUM_INTERVAL_MS  7000   // ms between drum releases
 #define DRUM_SETTLE_MS    1000   // ms to let the drum settle before grabbing, need to tune this GCER
 
