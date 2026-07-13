@@ -5,13 +5,14 @@
 #include<stdbool.h>
 
 
-#define CLAW 2
-#define ARM 3
+#define CLAW 1
+#define ARM 2 
 #define MOTORl 3
+
 #define MOTORr 2
 #define SENSORl 5
-#define SENSORr 2
-#define LIGHT_SENSOR_PORT 5
+#define SENSORr 0
+#define LIGHT_SENSOR_PORT 3
 #define BLACK 3000
 #define RIGHT_MOTOR_CORRECTION 1.002
 #define MOTOR_SPEED_250 250
@@ -21,8 +22,8 @@
 #define WHITE 2000
 #define CLAW_UPPER_OPEN 450
 #define CLAW_OPEN 600
-#define CLAW_CLOSE 1130
-#define CLAW_DOOR 1080 
+#define CLAW_CLOSE 1000
+#define CLAW_DOOR 1000
 #define CLAW_BOTGUY 874	
 #define CLAW_CONE 560
 #define ARM_BOTGUY 1500
@@ -32,18 +33,19 @@
 #define ARM_UP 820
 #define ARM_START 200
 #define ARM_TRAVEL 530
-#define ARM_DOWN_BOTGUY 1750
+#define ARM_DOWN_BOTGUY 1700
 #define ARM_DOOR 1630
 #define ARM_CONE_UP 500
 #define CONE1_LINE_FOLLOW 6000
 #define CONE2_LINE_FOLLOW 2300
-#define RETURN_LINE_FOLLOW 11000
+#define RETURN_LINE_FOLLOW 10700
 #define RAMP_LINE_FOLLOW 15300
-#define SHUT_DOWN_SECS 11
+#define shut_down_secs 119
+
 
 /* Line Follow Definitions */
 
-#define TO_BOTGUY_LINE_FOLLOW 4000
+#define TO_BOTGUY_LINE_FOLLOW 3700
 
 void move_arm(int end_pos) {
     enable_servos();
@@ -65,7 +67,6 @@ void move_arm(int end_pos) {
         set_servo_position(ARM, current_pos);
         msleep(15);
     }
-    disable_servos();
     printf("move_arm(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
 }
 void move_claw(int end_pos) {
@@ -88,7 +89,8 @@ void move_claw(int end_pos) {
         set_servo_position(CLAW, current_pos);
         msleep(60);
     }
-    disable_servos();
+    msleep(300);
+    disable_servo(CLAW);
     printf("move_claw(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
 }
 
@@ -535,50 +537,39 @@ void move_to_botguy() {
 
 void open_doors() {
     move_arm_fast_slow_down(ARM_DOOR);
-    //yo i doubled ts too- denial
+
     line_follow(60,MOTOR_SPEED_500);
     right_degrees_speed(35);
     move_arm(ARM_DOWN_BOTGUY);
-    msleep(50);
-    left_degrees(40);
-    //idk if ts is good or not-denial
-    line_follow(10,MOTOR_SPEED_500);
+    left_degrees(35);
+
+    line_follow(20,MOTOR_SPEED_500);
     ao();
     msleep(100);
-    //yo i halved ts line follow- denial
-    line_follow(20,MOTOR_SPEED_500);
     left_degrees(20);
-    right_degrees(35);
+    right_degrees(38);
+    ao();
     //yo i changed ts from 5 to 20
-    left_degrees(15);
-    msleep(100);
-    disable_servos();
-    msleep(300);
     ao();
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
-    msleep(300);
+    msleep(800);
     ao();
     move_arm(ARM_DOWN_BOTGUY);  
-    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(250);
+    line_follow(1100,MOTOR_SPEED_1000);
     ao();
     enable_servos();
-    msleep(300);
-    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(40);
     set_servo_position(CLAW,CLAW_OPEN);
-    msleep(200);
-    right_degrees_less(1);
+    msleep(1000);
+    right_degrees(8);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(200);
+    msleep(900);
     ao();
-    msleep(300);
     set_servo_position(CLAW,CLAW_CLOSE);
     move_arm(ARM_BOTGUY);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
-    msleep(300);
+    msleep(700);
     ao();
-    left_degrees_less(1);
+    left_degrees(8);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1450);
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
@@ -673,6 +664,7 @@ void get_cones() {
     move_arm(ARM_UP);
     left_degrees(DEGREES);
     msleep(200);
+    
     line_follow(RETURN_LINE_FOLLOW,MOTOR_SPEED_1500);
     right_degrees(90);
     back_till_blk();
@@ -730,8 +722,16 @@ void parking() {
 }
 
 int main() {
-    //wait_for_light(0);
-    shut_down_in(118);
+    right_degrees(90);
+             /*
+    #if 1
+    
+    printf("WAIT FOR LIGHT");
+    wait_for_light(LIGHT_SENSOR_PORT);
+    printf("LIGHT DETETCED, SHUT DOWN IN = %d ", shut_down_secs);
+    shut_down_in(shut_down_secs);
+    #endif
+    */
 	int start_time = seconds();
     move_to_botguy();
     open_doors();
