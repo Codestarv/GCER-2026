@@ -4,6 +4,7 @@
 #include<stdint.h>
 #include<stdbool.h>
 
+long start_time_ms;   
 
 //230 TICKS PER INCH
 //TICKS PER SECOND DEPENDS ON SPEED
@@ -43,7 +44,7 @@
 
 #define ARM_DOWN 90
 #define ARM_ALMOST_DOWN 200
-#define CLAW_OPEN 1616
+#define CLAW_OPEN 1400
 #define CLAW_CLOSE 0
 #define ARM_UP 1800
 #define ARM_UP_STORAGE 1250
@@ -374,12 +375,14 @@ void go_to_drums() {
     ao();
     move_arm(ARM_DOWN);
     ao();
+	printf("ARM DOWN = %lu ", systime() - start_time_ms);
 }
 void grab_drum() {
     enable_servos();
     set_servo_position(CLAW,CLAW_CLOSE);
     msleep(100);
 }
+
 void put_drum_storage_blue() {
     msleep(200);
     move_arm(ARM_UP);
@@ -424,20 +427,22 @@ void put_drum_storage_both(int COLOR, int drum_num) {
     move_drum(MOVE_DRUM, MOTOR_SPEED_500);
 	
     move_arm(ARM_DOWN_STORAGE); 
-    msleep(500);
+    msleep(500); //Stabilize the arm after move
     set_servo_position(CLAW, CLAW_OPEN);  
-    msleep(1000);                          
+    msleep(400); // Stabilize the Arm/Claw                     
 
     move_arm_fast(ARM_UP_STORAGE);        
-    move_drum(-MOVE_DRUM+6, MOTOR_SPEED_500);      
+    move_drum(-MOVE_DRUM+3, MOTOR_SPEED_500);  //Need to fine tune this the practice  
 
 
     if (drum_num != 8) {
-        move_arm_fast(ARM_ALMOST_DOWN);    
+        move_arm_fast(ARM_ALMOST_DOWN);
         msleep(50);
         move_arm(ARM_DOWN);
+        printf("ARM DOWN = %lu ", systime() - start_time_ms);
     }   
 }
+
 void move_storage(int distance, int speed) {
     cmpc(STORAGE_MOTOR);
     while((gmpc(STORAGE_MOTOR) < distance)) {
@@ -462,18 +467,7 @@ void move_storage2(int distance, int speed) {
     msleep(50);                             
 }
 
-// Like move_storage2, but instead of a fixed distance it drives the storage
-// motor until the touch sensor on digital port 0 is pressed, then stops and
-// holds. The sign of `speed` sets direction (positive = same way move_storage2
-// raises). Great as a "homing" move: a limit switch is an absolute stop, so it
-// doesn't drift the way encoder counts can over many runs.
-//
-// Polarity note: this assumes the switch reads 1 when pressed (the usual case).
-// If it stops instantly / never stops, flip the loop test to !digital(...).
-//
-// The motor command is RE-ISSUED every loop. That's harmless in normal use, and
-// it's what makes this safe to run in a thread: if an ao() elsewhere cuts the
-// motor, the next iteration restarts it, so the rack still reaches the switch.
+
 void move_storage_until_touch(int speed) {
     printf("move_storage_until_touch(): speed=%d, waiting for touch...\n", speed);
     cmpc(STORAGE_MOTOR);            // optional: lets us report how far it went
@@ -489,37 +483,34 @@ void move_storage_until_touch(int speed) {
            gmpc(STORAGE_MOTOR));
 }
 
-// Threaded homing lift: raises the rack to the top limit switch while the robot
-// drives to the post. Just wraps move_storage_until_touch (which re-issues the
-// motor command each loop, so the ao() calls in the turns/line-follow can't
-// stall it). No lift_stop / encoder top-up needed anymore -- the switch IS the
-// stop, so the thread simply runs until it's home and then holds.
+
 void lift_storage_task() {
     move_storage_until_touch(-MOTOR_SPEED_1500);
 }
-#define FIRST_DRUM_TIME 10   // s, ADDS starts dispensing
-#define DRUM_INTERVAL    7.0   
-#define DRUM_SETTLE      1  
 
-double start_time;   
+
+#define FIRST_DRUM_MS    10000   // ms, ADDS starts dispensing
+#define DRUM_INTERVAL_MS  7000   // ms between drum releases
+#define DRUM_SETTLE_MS    1000   // ms to let the drum settle before grabbing, need to tune this GCER
+
 
 void wait_for_drum(int n) {
-    double release = FIRST_DRUM_TIME + DRUM_INTERVAL * (n - 1) + DRUM_SETTLE;
-    while (seconds() - start_time < release) {
-        msleep(10);
+    long release = start_time_ms
+                 + FIRST_DRUM_MS
+                 + (long)DRUM_INTERVAL_MS * (n - 1)
+                 + DRUM_SETTLE_MS;
+
+    while ((long)systime() < release) {
+        msleep(5);
     }
-    printf("Drum %d ready at t=%.1fs\n", n, seconds() - start_time);
+    printf("Drum %d ready at t=%ldms\n", n, (long)systime() - start_time_ms);
 }
 
 
 bool drum_is_blue() {
-    msleep(100);
-
     for (int attempt = 0; attempt < 2; attempt++) {
         int pink_area = 0;
         int blue_area = 0;
-
-   
         for (int i = 0; i < 5; i++) {
             camera_update();
 
@@ -529,33 +520,24 @@ bool drum_is_blue() {
             if (get_object_count(BLUE_CAMERA_CHANNEL) > 0) {
                 blue_area += get_object_area(BLUE_CAMERA_CHANNEL, 0);
             }
-
-            msleep(30);
+            msleep(35);
         }
-
         printf("PINK area = %d, BLUE area = %d (attempt %d)\n",
                pink_area, blue_area, attempt);
 
-
         if (pink_area < 50 && blue_area < 50 && attempt == 0) {
             printf("drum_is_blue(): nothing seen, re-looking...\n");
-            msleep(80);
             continue;
         }
-
         return (blue_area > pink_area);
     }
-
-    // Fallback: never got a confident read. Default to PINK and flag it loudly.
+    // Fallback: never got a confident read. Default to PINK.
     printf("drum_is_blue(): NO CONFIDENT READ -> defaulting PINK\n");
     return false;
 }
+
 void go_to_post() {
-    // --- Start homing the storage rack to its top limit switch IMMEDIATELY ---
-    // The rack rises during the ENTIRE drive to the first post. The thread
-    // re-commands the motor every loop, so the ao() calls in the turns and
-    // line-follow below can't stall it -- it keeps climbing until the switch
-    // trips. We join before opening the claw, so the rack is guaranteed home.
+
     thread lift = thread_create(lift_storage_task);
     thread_start(lift);
 
@@ -641,22 +623,37 @@ void handle_one_drum(int drum_num) {
     
     grab_drum();
     if (drum_is_blue()) {
-        printf("BLUE\n");
-        put_drum_storage_both(0,drum_num);
+        printf("Drum is BLUE\n");
+        put_drum_storage_both(0, drum_num);
     } else {
-        printf("PINK\n");
-        put_drum_storage_both(1,drum_num);
+        printf("Drum is PINK\n");
+        put_drum_storage_both(1, drum_num);
     }
 }
 
+//This function initializes camera an
+void init_camera() {
+    camera_open();
+    
+    for (int i = 0; i < 10; i++) {
+        camera_update();
+        printf("frame %d: pink=%d blue=%d\n", i,
+               get_object_count(PINK_CAMERA_CHANNEL) > 0 ? get_object_area(PINK_CAMERA_CHANNEL, 0) : 0,
+               get_object_count(BLUE_CAMERA_CHANNEL) > 0 ? get_object_area(BLUE_CAMERA_CHANNEL, 0) : 0);
+        msleep(30);
+    }
+    printf("Elapsed Time = %lu" , start_time_ms - systime());
+
+}
 int main() {
     
     shut_down_in(119);
-    start_time = seconds();
-    camera_open();
+    start_time_ms = systime();          // ms since boot; all drum timing is relative to this
+    //camera_open();
+    init_camera();
     enable_servos();                 // enable once; servos stay enabled all match so the arm holds
-    set_servo_position(PINK_CLAW, PINK_CLOSE);
-    set_servo_position(BLUE_CLAW, BLUE_CLOSE);
+    set_servo_position(PINK_CLAW, PINK_CLOSE); // Micro servo
+    set_servo_position(BLUE_CLAW, BLUE_CLOSE); // Micro servo
     go_to_drums();
 
     wait_for_drum(1);
@@ -669,13 +666,13 @@ int main() {
     }
 
     camera_close();
-
+	return 0;
     go_to_post();
     go_to_second_post();
     
-    int final_time = seconds();
-    int elapsed_time = final_time - start_time;
-    printf("Elapsed Time = %d",elapsed_time);
+    long final_time = systime();
+    long elapsed_time = final_time - start_time_ms;
+    printf("Elapsed Time = %ld ms (%.1f s)\n", elapsed_time, elapsed_time / 1000.0);
     
     
  
