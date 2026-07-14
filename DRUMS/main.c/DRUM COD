@@ -30,6 +30,7 @@ long start_time_ms;
 
 #define SENSORl 5
 #define SENSORr 0
+#define LIGHT_SENSOR_PORT 4
 
 // Touch sensor / limit switch. NOTE: this is a DIGITAL port, which is separate
 // from the analog ports above -- analog 0 (SENSORl) and digital 0 are different
@@ -42,19 +43,21 @@ long start_time_ms;
 #define BLUE_CLAW 1
 
 
+#define ARM_START 267
 #define ARM_DOWN 90
 #define ARM_ALMOST_DOWN 200
 #define CLAW_OPEN 1400
 #define CLAW_CLOSE 0
 #define ARM_UP 1800
 #define ARM_UP_STORAGE 1250
-#define ARM_DOWN_STORAGE 1250
+#define ARM_DOWN_STORAGE 1190
 #define BLUE_OPEN 180
 #define BLUE_CLOSE 1600
 #define PINK_CLOSE 150
 #define PINK_OPEN 1547
  
 #define STORAGE_DISTANCE 15350
+#define FIRST_ARM_DISTANCE  811
 
 
 #define ARM_STEP        12
@@ -63,6 +66,8 @@ long start_time_ms;
 
 #define ARM_STEP_FAST        18
 #define ARM_STEP_DELAY_FAST  6
+
+#define shut_down_secs 119
 
 void drive(int speed1, int speed2) {
     mav(MOTORl, speed1);
@@ -77,7 +82,7 @@ void drive_till_blk() {
 #define DRUM_SLOW_ZONE 300   // ticks from target where we drop to slow speed
 #define DRUM_SLOW_SPEED 250  // final approach speed
 
-void move_drum2(int distance, int speed) {
+void move_drum3(int distance, int speed) {
     int fast = abs(speed);
     int slow = (fast < DRUM_SLOW_SPEED) ? fast : DRUM_SLOW_SPEED;
     int slowed = 0;
@@ -105,22 +110,88 @@ void move_drum2(int distance, int speed) {
     printf("Expected Distance = %d. Actual Distance = %d", distance, gmpc(ARM_MOTOR));
     ao();
 }
-void move_drum(int distance, int speed) {
+#define DRUM_ACCEL_TICKS  250   // ramp-up distance
+#define DRUM_DECEL_TICKS  400   // ramp-down distance
+#define DRUM_MIN_SPEED    180   // slowest that still moves the arm under load
+#define DRUM_UPDATE_MS    10    // setpoint refresh period
+
+void move_drum2(int distance, int speed) {
+    int target   = abs(distance);
+    int dir      = (distance >= 0) ? 1 : -1;
+    int cruise   = abs(speed);
+    int min_spd  = (cruise < DRUM_MIN_SPEED) ? cruise : DRUM_MIN_SPEED;
+
+    int accel = DRUM_ACCEL_TICKS;
+    int decel = DRUM_DECEL_TICKS;
+
+    // Short move: shrink the ramps so they don't overlap (triangular profile).
+    if (accel + decel > target) {
+        accel = target * accel / (accel + decel);
+        decel = target - accel;
+    }
+
     cmpc(ARM_MOTOR);
 
-    if (distance > 0) {
-        mav(ARM_MOTOR, abs(speed));
-        while (gmpc(ARM_MOTOR) < distance) {
-            msleep(1);
+    while (1) {
+        int pos  = abs(gmpc(ARM_MOTOR));
+        int left = target - pos;
+
+        if (left <= 0) break;
+
+        int cmd;
+        if (pos < accel && accel > 0) {
+            // ramp up: min -> cruise
+            cmd = min_spd + (cruise - min_spd) * pos / accel;
+        } else if (left < decel && decel > 0) {
+            // ramp down: cruise -> min
+            cmd = min_spd + (cruise - min_spd) * left / decel;
+        } else {
+            cmd = cruise;
         }
-    } else {
-        mav(ARM_MOTOR, -abs(speed));
-        while (gmpc(ARM_MOTOR) > distance) {
-            msleep(1);
-        }
+
+        if (cmd < min_spd) cmd = min_spd;
+
+        mav(ARM_MOTOR, dir * cmd);
+        msleep(DRUM_UPDATE_MS);
     }
-	printf("Expected Distance = %d. Actual Distance = %d", distance, gmpc(ARM_MOTOR));
+
+    freeze(ARM_MOTOR);   // actively hold position instead of going limp
+    msleep(30);
+
+    printf("move_drum: expected=%d actual=%d\n", distance, gmpc(ARM_MOTOR));
+}
+void move_drum(int distance, int speed) {
+    int actual_distance = 0;
+    int error = 0;
+    int expected_distance = distance;
+    
+    printf("move_drum(): Distance = %d. speed = %d\n", distance, speed);
+    cmpc(ARM_MOTOR);
+    mav(ARM_MOTOR, speed);
+    while (abs(gmpc(ARM_MOTOR)) < distance) {
+       msleep(1);
+    }
     ao();
+    actual_distance = abs(gmpc(ARM_MOTOR));
+    printf("move_drum(): Expected Distance = %d. Actual Distance = %d\n",distance, actual_distance);
+  
+    error = actual_distance - expected_distance;
+    cmpc(ARM_MOTOR);
+    if (error > 0) {
+        printf("CORRECTING OVERSHOOT, Error = %d\n", error);
+        int new_speed = 100;
+        // do the opposite of the speed to correct the overshoot.
+        if(speed) {
+            new_speed = -100;
+        }    
+    	while (abs(gmpc(ARM_MOTOR)) < error) {
+        	mav(ARM_MOTOR, new_speed);
+        }
+    } else if (error < 0) {
+        printf("Error: CORRECTING UNDERSHOOT, should not be happening Error = %d\n", error);
+    }
+    ao();
+	printf("Expected Distance = %d. Actual Distance = %d\n", error, abs(gmpc(ARM_MOTOR)));
 }
 
 void move_drums(int distance, int max_speed) {
@@ -364,8 +435,8 @@ void drive_distance(int distance, int speed) {
 void go_to_drums() {
     move_arm(ARM_UP);
     enable_servos();
-    move_claw(CLAW_OPEN);
-	//msleep(4000);
+    set_servo_position(CLAW,CLAW_OPEN);
+    move_drum(FIRST_ARM_DISTANCE, -MOTOR_SPEED_500);
     drive_till_blk();
     drive(1500,1500);
     msleep(500);
@@ -380,7 +451,7 @@ void go_to_drums() {
 void grab_drum() {
     enable_servos();
     set_servo_position(CLAW,CLAW_CLOSE);
-    msleep(100);
+    msleep(400);
 }
 
 void put_drum_storage_blue() {
@@ -415,25 +486,37 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM -1115
-#define PINK_MOVE_DRUM -990
-void put_drum_storage_both(int COLOR, int drum_num) {
-
-        
-    int MOVE_DRUM = (COLOR == 0) ? BLUE_MOVE_DRUM : PINK_MOVE_DRUM;
-    enable_servos();
-    msleep(100);                       
+#define BLUE_MOVE_DRUM 985
+#define PINK_MOVE_DRUM 985
+void put_drum_storage_both(int COLOR, int drum_num) {        
+    int speed;
+    int move_distance;
+    
+    if(COLOR == 0) { // Blue
+       speed = MOTOR_SPEED_500;
+        move_distance = BLUE_MOVE_DRUM;
+    }
+    else {
+       speed = -MOTOR_SPEED_500;
+       move_distance = PINK_MOVE_DRUM; 
+    }
+       
+    enable_servos();                      
     move_arm_fast(ARM_UP_STORAGE);       
-    move_drum(MOVE_DRUM, MOTOR_SPEED_500);
-	
-    move_arm(ARM_DOWN_STORAGE); 
-    msleep(500); //Stabilize the arm after move
+    move_drum(move_distance, speed); // to put it to storage.
+	if (COLOR == 0) {
+        move_arm(ARM_UP_STORAGE);
+    }
+    //ARM MOVEMENT ONLY NEEDED FOR PINK
+    else {
+        move_arm(ARM_DOWN_STORAGE); 
+    }
+    msleep(700); //Stabilize the arm after move
     set_servo_position(CLAW, CLAW_OPEN);  
     msleep(400); // Stabilize the Arm/Claw                     
 
     move_arm_fast(ARM_UP_STORAGE);        
-    move_drum(-MOVE_DRUM+3, MOTOR_SPEED_500);  //Need to fine tune this the practice  
-
+    move_drum(move_distance, -speed);  // Move back to pick the next drum.
 
     if (drum_num != 8) {
         move_arm_fast(ARM_ALMOST_DOWN);
@@ -491,7 +574,7 @@ void lift_storage_task() {
 
 #define FIRST_DRUM_MS    9500   // ms, ADDS starts dispensing
 #define DRUM_INTERVAL_MS  7000   // ms between drum releases
-#define DRUM_SETTLE_MS    1000   // ms to let the drum settle before grabbing, need to tune this GCER
+#define DRUM_SETTLE_MS    750   // ms to let the drum settle before grabbing, need to tune this GCER
 
 
 void wait_for_drum(int n) {
@@ -642,12 +725,21 @@ void init_camera() {
                get_object_count(BLUE_CAMERA_CHANNEL) > 0 ? get_object_area(BLUE_CAMERA_CHANNEL, 0) : 0);
         msleep(30);
     }
-    printf("Elapsed Time = %lu" , start_time_ms - systime());
+    printf("Elapsed Time = %lu\n" , systime() - start_time_ms);
 
 }
 int main() {
-    
-    shut_down_in(119);
+    move_claw(CLAW_CLOSE);
+    move_drum(810, MOTOR_SPEED_500);
+    move_arm(ARM_START);
+    /*
+    #if 1
+    printf("WAIT FOR LIGHT");
+    wait_for_light(LIGHT_SENSOR_PORT);
+    printf("LIGHT DETETCED, SHUT DOWN IN = %d ", shut_down_secs);
+    shut_down_in(shut_down_secs);
+    #endif
+    */
     start_time_ms = systime();          // ms since boot; all drum timing is relative to this
     //camera_open();
     init_camera();
