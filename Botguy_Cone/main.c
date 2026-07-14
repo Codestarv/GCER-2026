@@ -24,7 +24,7 @@
 #define CLAW_UPPER_OPEN 450
 #define CLAW_OPEN 450
 #define CLAW_CLOSE 1100
-#define CLAW_DOOR 1000
+#define CLAW_DOOR 1100
 #define CLAW_BOTGUY 874	
 #define CLAW_CONE 560
 #define ARM_BOTGUY 1500
@@ -34,8 +34,8 @@
 #define ARM_UP 820
 #define ARM_START 200
 #define ARM_TRAVEL 530
-#define ARM_DOWN_BOTGUY 1650
-#define ARM_DOOR 1630
+#define ARM_DOWN_BOTGUY 1680
+#define ARM_DOOR 1550
 #define ARM_CONE_UP 500
 #define CONE1_LINE_FOLLOW 6000
 #define CONE2_LINE_FOLLOW 2300
@@ -46,7 +46,7 @@
 
 /* Line Follow Definitions */
 
-#define TO_BOTGUY_LINE_FOLLOW 3700
+#define TO_BOTGUY_LINE_FOLLOW 4200
 
 void move_arm(int end_pos) {
     enable_servos();
@@ -506,6 +506,7 @@ void move_to_botguy() {
     enable_servos();
     move_arm(ARM_START);
     move_claw(CLAW_DOOR);
+    
     drive_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
 
@@ -539,12 +540,12 @@ void move_to_botguy() {
 void open_doors() {
     move_arm_fast_slow_down(ARM_DOOR);
 
-    line_follow_2(50,MOTOR_SPEED_500);
-    right_degrees_speed(35);
+    line_follow(100,MOTOR_SPEED_500);
+    right_degrees(35);
     move_arm(ARM_DOWN_BOTGUY);
     left_degrees(35);
 
-    line_follow(20,MOTOR_SPEED_500);
+    line_follow(100,MOTOR_SPEED_500);
     ao();
     msleep(100);
     left_degrees(20);
@@ -555,14 +556,13 @@ void open_doors() {
     msleep(800);
     ao();
     move_arm(ARM_DOWN_BOTGUY);  
-    line_follow(1100,MOTOR_SPEED_1000);
+    line_follow(1200,MOTOR_SPEED_1000);
     ao();
     enable_servos();
     set_servo_position(CLAW,CLAW_OPEN);
-    msleep(1000);
     right_degrees(5);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(900);
+    msleep(400);
     ao();
     set_servo_position(CLAW,CLAW_CLOSE);
     
@@ -570,7 +570,7 @@ void open_doors() {
     
     move_arm(ARM_BOTGUY);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
-    msleep(700);
+    msleep(400);
     ao();
     left_degrees(8);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
@@ -588,14 +588,14 @@ void deliver_botguy() {
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(300);
     //line_follow(1000,MOTOR_SPEED_1500);
-    right_degrees(88);
+    right_degrees(77);
     
     drive_till_blk_time(1);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(300);
     drive_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(3100);
+    msleep(3000);
     left_degrees(90);
     drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
     msleep(1000);
@@ -641,16 +641,17 @@ void get_cones() {
     ao();
     enable_servos();
     set_servo_position(CLAW, CLAW_CLOSE);
-    msleep(1000);
-    msleep(200);
+    msleep(300);
     printf("Closed Claw, Ended Cone2");
     move_arm(ARM_UP);
     left_degrees(DEGREES);
     msleep(200);
     
-    line_follow(RETURN_LINE_FOLLOW,MOTOR_SPEED_1500);
+    line_follow_2(RETURN_LINE_FOLLOW,MOTOR_SPEED_1500);
     right_degrees(90);
-    msleep(2000);
+    
+    //msleep(2000);
+    
     back_till_blk();
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(400);
@@ -659,9 +660,10 @@ void get_cones() {
     msleep(1700);
     drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
     msleep(200);
-    right_degrees(90);
+    
+    right_degrees(85);
     drive_till_blk_time(0.25);
-    line_follow(15100,MOTOR_SPEED_1500);
+    line_follow_2(15100,MOTOR_SPEED_1500);
     drive_till_white(0.5);
 }
 void parking() {
@@ -679,9 +681,23 @@ void parking() {
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(1250);
     back_till_blk();
+    
+  	drive(-MOTOR_SPEED_1500, -MOTOR_SPEED_1500);
+    msleep(300);
+    
+    right_degrees(10);
+    
+    drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
+    msleep(600);
+    
+    drive(-MOTOR_SPEED_1500, -MOTOR_SPEED_1500);
+    msleep(300);
+    
+    
+    
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1100);
-    left_degrees(33);
+    left_degrees(40);
     drive_till_blk_time(0.5);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(1570);
@@ -706,7 +722,10 @@ void parking() {
 }
 
 int main() {
-    /*
+    
+    enable_servos();
+    move_arm(ARM_START);
+    move_claw(CLAW_DOOR);
     #if 1
     
     printf("WAIT FOR LIGHT");
@@ -714,14 +733,14 @@ int main() {
     printf("LIGHT DETETCED, SHUT DOWN IN = %d ", shut_down_secs);
     shut_down_in(shut_down_secs);
     #endif
-    */
+    
 	int start_time = seconds();
     move_to_botguy();
     open_doors();
     deliver_botguy();
     get_cones();
     
-    //parking();
+    parking();
     int end_time = seconds();
     printf("Elapsed Time = %d", end_time- start_time);
    
