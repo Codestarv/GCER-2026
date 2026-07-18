@@ -23,9 +23,9 @@
 //bigger number: more closed
 #define CLAW_UPPER_OPEN 450
 #define CLAW_OPEN 450
-#define CLAW_CLOSE 1110
+#define CLAW_CLOSE 1140
 #define CLAW_DOOR 1100
-#define CLAW_BOTGUY 1050
+#define CLAW_BOTGUY 1100
 #define CLAW_CONE 560
 #define ARM_BOTGUY 1500
 #define ARM_CONE 1910
@@ -35,18 +35,18 @@
 #define ARM_START 160
 #define ARM_TRAVEL 530
 #define ARM_DOWN_BOTGUY 1680
-#define ARM_DOOR 1550
+#define ARM_DOOR 1561
 #define ARM_CONE_UP 500
 #define CONE1_LINE_FOLLOW 6000
 #define CONE2_LINE_FOLLOW 2300
-#define RETURN_LINE_FOLLOW 8800
+#define RETURN_LINE_FOLLOW 9000
 #define RAMP_LINE_FOLLOW 15
 #define shut_down_secs 119
 
 
 /* Line Follow Definitions */
 
-#define TO_BOTGUY_LINE_FOLLOW 3600
+#define TO_BOTGUY_LINE_FOLLOW 3700
 
 void move_arm(int end_pos) {
     enable_servos();
@@ -520,7 +520,7 @@ void move_to_botguy() {
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(500);
     ao();
-    right_degrees(65);
+    right_degrees(60);
 
     line_follow(TO_BOTGUY_LINE_FOLLOW, MOTOR_SPEED_1500);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
@@ -544,8 +544,8 @@ void open_doors() {
     //value that works when the brown cube gets stuck: right_degrees(35)
     right_degrees(35);
     move_arm(ARM_DOWN_BOTGUY);
-    left_degrees(32);
-    line_follow(80,MOTOR_SPEED_500);
+    left_degrees(29);
+    line_follow(50,MOTOR_SPEED_500);
     left_degrees(35);
     right_degrees(38);
     ao();
@@ -554,7 +554,7 @@ void open_doors() {
     msleep(800);
     ao();
     move_arm(ARM_DOWN_BOTGUY);  
-    line_follow(1100,MOTOR_SPEED_1000);
+    line_follow(1300,MOTOR_SPEED_1000);
     ao();
     enable_servos();
     set_servo_position(CLAW,CLAW_OPEN);
@@ -586,14 +586,14 @@ void deliver_botguy() {
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(300);
     //line_follow(1000,MOTOR_SPEED_1500);
-    right_degrees(65);
+    right_degrees(70);
     
     drive_till_blk_time(1);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(300);
     drive_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(3000);
+    msleep(2900);
     left_degrees(75);
     drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
     msleep(1000);
@@ -696,7 +696,7 @@ void parking() {
     back_till_blk();
     //drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     //msleep(200);
-    left_degrees(140);
+    left_degrees(130);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(3100);
     drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
@@ -717,6 +717,7 @@ int main() {
     move_arm(ARM_START);
     move_claw(CLAW_DOOR);
     /*
+    
     #if 1
     
     printf("WAIT FOR LIGHT");
