@@ -44,7 +44,7 @@ long start_time_ms;
 
 
 #define ARM_START 267
-#define ARM_DOWN 70
+#define ARM_DOWN 55
 #define ARM_ALMOST_DOWN 100
 #define CLAW_OPEN 1400
 #define CLAW_CLOSE 0
@@ -488,7 +488,7 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM 995
+#define BLUE_MOVE_DRUM 1015
 #define PINK_MOVE_DRUM 950
 void put_drum_storage_both(int COLOR, int drum_num) {        
     int speed;
@@ -505,7 +505,7 @@ void put_drum_storage_both(int COLOR, int drum_num) {
 
     enable_servos();                      
     move_arm_fast(ARM_UP_STORAGE);       
-    move_drum(move_distance+6, speed); // to put it to storage.
+    move_drum(move_distance+7, speed); // to put it to storage.
     if (COLOR == 0) {
         move_arm(ARM_UP_STORAGE);
     }
@@ -513,12 +513,12 @@ void put_drum_storage_both(int COLOR, int drum_num) {
     else {
         move_arm(ARM_UP_STORAGE); 
     }
-    msleep(700); //Stabilize the arm after move
+    msleep(700);
     set_servo_position(CLAW, CLAW_OPEN);  
     msleep(200); // Stabilize the Arm/Claw                     
 
     move_arm_fast(ARM_UP_STORAGE);        
-    move_drum(move_distance, -speed);  // Move back to pick the next drum.
+    move_drum(move_distance, -speed);  
 
     if (drum_num != 8) {
         move_arm_fast(ARM_ALMOST_DOWN);
@@ -635,7 +635,7 @@ void go_to_post() {
     msleep(900);
     back_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(900);
+    msleep(1100);
     right_degrees(83);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1800);
@@ -643,7 +643,7 @@ void go_to_post() {
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(350);
     right_degrees(80);
-    msleep(4850);
+    msleep(4950);
     left_degrees(80);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(500);
@@ -657,16 +657,14 @@ void go_to_post() {
     msleep(400);
     //You have to change this line follow an turn if doesnt work
     */
-    line_follow(1800,MOTOR_SPEED_1000);
+    line_follow(2025,MOTOR_SPEED_1000);
     left_degrees(90);
 
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
-    msleep(3800);
+    msleep(4000);
     right_degrees(12);
     //right_degrees(15);
-    drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
-    msleep(100);
-
+	left_degrees(3);
     freeze(MOTORl);
     freeze(MOTORr);
 
@@ -696,17 +694,17 @@ void go_to_second_post() {
     drive(1000,1000);
     msleep(900);
     right_degrees(50);
-    line_follow(14900,MOTOR_SPEED_1500); // You may need to change
+    line_follow(13900,MOTOR_SPEED_1500); // You may need to change
     left_degrees(166); // You may need to change
-    drive_distance(4100,-MOTOR_SPEED_1000);
-    left_degrees(2);
+    drive_distance(2500,-MOTOR_SPEED_1000);
+    left_degrees(3); // Left Degrees to hit post
+    right_degrees(1); //Align storage hole with post
     // You may need to change
     enable_servos();
     set_servo_position(PINK_CLAW,PINK_OPEN);    
-    msleep(1000);
-    right_degrees(4); // You may need to change
-    drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
-    msleep(1000);
+    msleep(400); // You may need to change
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+    msleep(250);
     ao();
 }
 
@@ -741,9 +739,9 @@ void init_camera() {
     printf("Elapsed Time = %lu\n" , systime() - start_time_ms);
 
 }
-int main() {
-    
 
+int main() {
+   
     move_claw(CLAW_CLOSE);
     move_drum(885, MOTOR_SPEED_500);
     move_arm(ARM_DOWN);
@@ -752,14 +750,13 @@ int main() {
     enable_servos();                 // enable once; servos stay enabled all match so the arm holds
     set_servo_position(PINK_CLAW, PINK_CLOSE); // Micro servo
     set_servo_position(BLUE_CLAW, BLUE_CLOSE); // Micro servo
-/*
+
     #if 1
     printf("WAIT FOR LIGHT");
     wait_for_light(LIGHT_SENSOR_PORT);
     printf("LIGHT DETETCED, SHUT DOWN IN = %d ", shut_down_secs);
     shut_down_in(shut_down_secs);
     #endif
-*/
     start_time_ms = systime();          // ms since boot; all drum timing is relative to this
     //camera_open();
 
@@ -782,8 +779,4 @@ int main() {
     long final_time = systime();
     long elapsed_time = final_time - start_time_ms;
     printf("Elapsed Time = %ld ms (%.1f s)\n", elapsed_time, elapsed_time / 1000.0);
-
-
-
-
 }
