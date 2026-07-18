@@ -39,14 +39,14 @@
 #define ARM_CONE_UP 500
 #define CONE1_LINE_FOLLOW 6000
 #define CONE2_LINE_FOLLOW 2300
-#define RETURN_LINE_FOLLOW 10700
-#define RAMP_LINE_FOLLOW 15300
+#define RETURN_LINE_FOLLOW 8800
+#define RAMP_LINE_FOLLOW 15
 #define shut_down_secs 119
 
 
 /* Line Follow Definitions */
 
-#define TO_BOTGUY_LINE_FOLLOW 4100
+#define TO_BOTGUY_LINE_FOLLOW 3600
 
 void move_arm(int end_pos) {
     enable_servos();
@@ -511,7 +511,7 @@ void move_to_botguy() {
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
 
     msleep(1300);
-    right_degrees(46);
+    right_degrees(40);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(2700);
     left_degrees(40);
@@ -529,7 +529,7 @@ void move_to_botguy() {
     drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
     msleep(500);
     left_degrees(55);
-    right_degrees(20);
+    right_degrees(24);
     ao();
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(670);
@@ -540,12 +540,12 @@ void move_to_botguy() {
 void open_doors() {
     move_arm_fast_slow_down(ARM_DOOR);
 
-    line_follow(80,MOTOR_SPEED_500);
+    line_follow(20,MOTOR_SPEED_500);
     //value that works when the brown cube gets stuck: right_degrees(35)
     right_degrees(35);
     move_arm(ARM_DOWN_BOTGUY);
-    left_degrees(40);
-    line_follow(50,MOTOR_SPEED_500);
+    left_degrees(32);
+    line_follow(80,MOTOR_SPEED_500);
     left_degrees(35);
     right_degrees(38);
     ao();
@@ -569,7 +569,7 @@ void open_doors() {
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(400);
     ao();
-    left_degrees(8);
+    left_degrees(6);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1450);
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
@@ -586,7 +586,7 @@ void deliver_botguy() {
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(300);
     //line_follow(1000,MOTOR_SPEED_1500);
-    right_degrees(77);
+    right_degrees(65);
     
     drive_till_blk_time(1);
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
@@ -594,11 +594,11 @@ void deliver_botguy() {
     drive_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(3000);
-    left_degrees(90);
+    left_degrees(75);
     drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
     msleep(1000);
     move_arm(ARM_UP);
-    left_degrees(190);
+    left_degrees(160);
     drive_till_blk_speed(MOTOR_SPEED_1000);
     drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
     msleep(400);
@@ -624,7 +624,7 @@ void get_cones() {
     back_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
     msleep(900);
-    right_degrees(95);
+    right_degrees(85);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(1200);
     ao();
@@ -647,7 +647,7 @@ void get_cones() {
     msleep(200);
     
     line_follow_2(RETURN_LINE_FOLLOW,MOTOR_SPEED_1500);
-    right_degrees(90);
+    right_degrees(75);
     
     //msleep(2000);
     
@@ -660,10 +660,10 @@ void get_cones() {
     drive(MOTOR_SPEED_1000,MOTOR_SPEED_1000);
     msleep(200);
     
-    right_degrees(90);
+    right_degrees(80);
     left_degrees(5);
     drive_till_blk_time(0.25);
-    line_follow_2(15100,MOTOR_SPEED_1500);
+    line_follow_2(13000,MOTOR_SPEED_1500);
     drive_till_white(0.5);
 }
 
@@ -696,7 +696,7 @@ void parking() {
     back_till_blk();
     //drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     //msleep(200);
-    left_degrees(150);
+    left_degrees(140);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(3100);
     drive(MOTOR_SPEED_1500, MOTOR_SPEED_1500);
