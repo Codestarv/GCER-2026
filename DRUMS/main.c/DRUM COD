@@ -44,20 +44,20 @@ long start_time_ms;
 
 
 #define ARM_START 267
-#define ARM_DOWN 90
-#define ARM_ALMOST_DOWN 200
+#define ARM_DOWN 55
+#define ARM_ALMOST_DOWN 100
 #define CLAW_OPEN 1400
 #define CLAW_CLOSE 0
 #define ARM_UP 1800
-#define ARM_UP_STORAGE 1250
-#define ARM_DOWN_STORAGE 1190
+#define ARM_UP_STORAGE 1168
+#define ARM_DOWN_STORAGE 1110
 #define BLUE_OPEN 180
 #define BLUE_CLOSE 1600
 #define PINK_CLOSE 150
 #define PINK_OPEN 1547
- 
+
 #define STORAGE_DISTANCE 15350
-#define FIRST_ARM_DISTANCE  811
+#define FIRST_ARM_DISTANCE  887
 
 
 #define ARM_STEP        12
@@ -67,7 +67,7 @@ long start_time_ms;
 #define ARM_STEP_FAST        18
 #define ARM_STEP_DELAY_FAST  6
 
-#define shut_down_secs 119
+#define shut_down_secs 120
 
 void drive(int speed1, int speed2) {
     mav(MOTORl, speed1);
@@ -164,17 +164,18 @@ void move_drum(int distance, int speed) {
     int actual_distance = 0;
     int error = 0;
     int expected_distance = distance;
-    
+
     printf("move_drum(): Distance = %d. speed = %d\n", distance, speed);
     cmpc(ARM_MOTOR);
     mav(ARM_MOTOR, speed);
     while (abs(gmpc(ARM_MOTOR)) < distance) {
-       msleep(1);
+        msleep(1);
     }
     ao();
+    /*
     actual_distance = abs(gmpc(ARM_MOTOR));
     printf("move_drum(): Expected Distance = %d. Actual Distance = %d\n",distance, actual_distance);
-  
+
     error = actual_distance - expected_distance;
     cmpc(ARM_MOTOR);
     if (error > 0) {
@@ -192,6 +193,7 @@ void move_drum(int distance, int speed) {
     }
     ao();
 	printf("Expected Distance = %d. Actual Distance = %d\n", error, abs(gmpc(ARM_MOTOR)));
+    */
 }
 
 void move_drums(int distance, int max_speed) {
@@ -200,14 +202,14 @@ void move_drums(int distance, int max_speed) {
     while (1) {
         int error = distance - gmpc(ARM_MOTOR);
 
-   
+
         if (abs(error) <= 5)
             break;
 
 
         int speed = error * 3;  
 
- 
+
         if (speed > max_speed)
             speed = max_speed;
         if (speed < -max_speed)
@@ -291,7 +293,7 @@ void move_claw(int end_pos) {
         set_servo_position(CLAW, current_pos);
         msleep(60);
     }
- 
+
     printf("move_claw(End): current_pos= %d, end_pos= %d\n", current_pos, end_pos);
 }
 
@@ -436,7 +438,7 @@ void go_to_drums() {
     move_arm(ARM_UP);
     enable_servos();
     set_servo_position(CLAW,CLAW_OPEN);
-    move_drum(FIRST_ARM_DISTANCE, -MOTOR_SPEED_500);
+    //move_drum(FIRST_ARM_DISTANCE, -MOTOR_SPEED_500);
     drive_till_blk();
     drive(1500,1500);
     msleep(500);
@@ -446,7 +448,7 @@ void go_to_drums() {
     ao();
     move_arm(ARM_DOWN);
     ao();
-	printf("ARM DOWN = %lu ", systime() - start_time_ms);
+    printf("ARM DOWN = %lu ", systime() - start_time_ms);
 }
 void grab_drum() {
     enable_servos();
@@ -461,7 +463,7 @@ void put_drum_storage_blue() {
 
     move_arm(ARM_DOWN_STORAGE);
     enable_servos();
-	msleep(100);
+    msleep(100);
     set_servo_position(CLAW,CLAW_OPEN);
     msleep(100);
     move_arm(ARM_UP_STORAGE);
@@ -476,7 +478,7 @@ void put_drum_storage_pink() {
     move_drum(-850, MOTOR_SPEED_1000);
     move_arm(ARM_DOWN_STORAGE);
     enable_servos();
-	msleep(100);
+    msleep(100);
     set_servo_position(CLAW,CLAW_OPEN);
     msleep(100);
     move_arm(ARM_UP_STORAGE);
@@ -486,37 +488,37 @@ void put_drum_storage_pink() {
 }
 
 
-#define BLUE_MOVE_DRUM 985
-#define PINK_MOVE_DRUM 985
+#define BLUE_MOVE_DRUM 1005
+#define PINK_MOVE_DRUM 960
 void put_drum_storage_both(int COLOR, int drum_num) {        
     int speed;
     int move_distance;
-    
+
     if(COLOR == 0) { // Blue
-       speed = MOTOR_SPEED_500;
+        speed = MOTOR_SPEED_500;
         move_distance = BLUE_MOVE_DRUM;
     }
     else {
-       speed = -MOTOR_SPEED_500;
-       move_distance = PINK_MOVE_DRUM; 
+        speed = -MOTOR_SPEED_500;
+        move_distance = PINK_MOVE_DRUM; 
     }
-       
+
     enable_servos();                      
     move_arm_fast(ARM_UP_STORAGE);       
-    move_drum(move_distance, speed); // to put it to storage.
-	if (COLOR == 0) {
+    move_drum(move_distance+8, speed); // to put it to storage.
+    if (COLOR == 0) {
         move_arm(ARM_UP_STORAGE);
     }
     //ARM MOVEMENT ONLY NEEDED FOR PINK
     else {
-        move_arm(ARM_DOWN_STORAGE); 
+        move_arm(ARM_UP_STORAGE); 
     }
-    msleep(700); //Stabilize the arm after move
+    msleep(700);
     set_servo_position(CLAW, CLAW_OPEN);  
-    msleep(400); // Stabilize the Arm/Claw                     
+    msleep(200); // Stabilize the Arm/Claw                     
 
     move_arm_fast(ARM_UP_STORAGE);        
-    move_drum(move_distance, -speed);  // Move back to pick the next drum.
+    move_drum(move_distance, -speed);  
 
     if (drum_num != 8) {
         move_arm_fast(ARM_ALMOST_DOWN);
@@ -579,9 +581,9 @@ void lift_storage_task() {
 
 void wait_for_drum(int n) {
     long release = start_time_ms
-                 + FIRST_DRUM_MS
-                 + (long)DRUM_INTERVAL_MS * (n - 1)
-                 + DRUM_SETTLE_MS;
+        + FIRST_DRUM_MS
+        + (long)DRUM_INTERVAL_MS * (n - 1)
+        + DRUM_SETTLE_MS;
 
     while ((long)systime() < release) {
         msleep(5);
@@ -616,7 +618,7 @@ bool drum_is_blue() {
     }
     // Fallback: never got a confident read. Default to PINK.
     printf("drum_is_blue(): NO CONFIDENT READ -> defaulting PINK\n");
-    return false;
+    return false ;
 }
 
 void go_to_post() {
@@ -633,28 +635,36 @@ void go_to_post() {
     msleep(900);
     back_till_blk();
     drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
-    msleep(900);
-    right_degrees(70);
+    msleep(1100);
+    right_degrees(83);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
-    msleep(1000);
+    msleep(1800);
     ao();
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+    msleep(350);
+    right_degrees(80);
+    msleep(4950);
+    left_degrees(80);
+    drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
+    msleep(500);
+
+    /*
     line_follow(250,MOTOR_SPEED_1500);
     right_degrees(100);
     msleep(3000);
     left_degrees(100);
     drive(-MOTOR_SPEED_1500,-MOTOR_SPEED_1500);
     msleep(400);
-    /*You have to change this line follow an turn if doesnt work*/
-    line_follow(1650,MOTOR_SPEED_1000);
+    //You have to change this line follow an turn if doesnt work
+    */
+    line_follow(2025,MOTOR_SPEED_1000);
     left_degrees(90);
 
     drive(-MOTOR_SPEED_1000,-MOTOR_SPEED_1000);
-    msleep(3300);
-    right_degrees(10);
+    msleep(4000);
+    right_degrees(12);
     //right_degrees(15);
-    drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
-    msleep(100);
-    
+	left_degrees(3);
     freeze(MOTORl);
     freeze(MOTORr);
 
@@ -683,17 +693,19 @@ void go_to_second_post() {
     drive_till_blk();
     drive(1000,1000);
     msleep(900);
-    right_degrees(50);
-    line_follow(14000,MOTOR_SPEED_1500); // You may need to change
-    left_degrees(172); // You may need to change
-    drive_distance(3800,-MOTOR_SPEED_1000);
-    left_degrees(7); // You may need to change
+    right_degrees(45);
+    line_follow(13900,MOTOR_SPEED_1500); // You may need to change
+    left_degrees(166); // You may need to change
+    drive_distance(3700,-MOTOR_SPEED_1000);
+    left_degrees(18); // Left Degrees to hit post
+    right_degrees(6); //Align storage hole with post
+    // You may need to change
+    msleep(200);
     enable_servos();
     set_servo_position(PINK_CLAW,PINK_OPEN);    
-    msleep(1000);
-    right_degrees(4); // You may need to change
-    drive(MOTOR_SPEED_500,MOTOR_SPEED_500);
-    msleep(1000);
+    msleep(400); // You may need to change
+    drive(MOTOR_SPEED_1500,MOTOR_SPEED_1500);
+    msleep(250);
     ao();
 }
 
@@ -703,7 +715,7 @@ void go_to_second_post() {
 // then store it. Doing it in this order everywhere makes detection consistent
 // and keeps a moving/just-dropped drum from being misread.
 void handle_one_drum(int drum_num) {
-    
+
     grab_drum();
     if (drum_is_blue()) {
         printf("Drum is BLUE\n");
@@ -717,7 +729,7 @@ void handle_one_drum(int drum_num) {
 //This function initializes camera an
 void init_camera() {
     camera_open();
-    
+
     for (int i = 0; i < 10; i++) {
         camera_update();
         printf("frame %d: pink=%d blue=%d\n", i,
@@ -729,10 +741,17 @@ void init_camera() {
 
 }
 int main() {
-    move_claw(CLAW_CLOSE);
-    move_drum(810, MOTOR_SPEED_500);
-    move_arm(ARM_START);
     /*
+    move_claw(CLAW_CLOSE);
+    move_drum(885, MOTOR_SPEED_500);
+    move_arm(ARM_DOWN);
+	*/
+    init_camera();
+    enable_servos();   
+    // enable once; servos stay enabled all match so the arm holds
+    set_servo_position(PINK_CLAW, PINK_CLOSE); // Micro servo
+    set_servo_position(BLUE_CLAW, BLUE_CLOSE); // Micro servo
+	/*
     #if 1
     printf("WAIT FOR LIGHT");
     wait_for_light(LIGHT_SENSOR_PORT);
@@ -742,10 +761,7 @@ int main() {
     */
     start_time_ms = systime();          // ms since boot; all drum timing is relative to this
     //camera_open();
-    init_camera();
-    enable_servos();                 // enable once; servos stay enabled all match so the arm holds
-    set_servo_position(PINK_CLAW, PINK_CLOSE); // Micro servo
-    set_servo_position(BLUE_CLAW, BLUE_CLOSE); // Micro servo
+
     go_to_drums();
 
     wait_for_drum(1);
@@ -758,15 +774,15 @@ int main() {
     }
 
     camera_close();
-	return 0;
+
     go_to_post();
     go_to_second_post();
-    
+
     long final_time = systime();
     long elapsed_time = final_time - start_time_ms;
     printf("Elapsed Time = %ld ms (%.1f s)\n", elapsed_time, elapsed_time / 1000.0);
-    
-    
- 
-    
+
+
+
+
 }
